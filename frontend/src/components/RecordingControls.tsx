@@ -5,6 +5,7 @@ import { appDataDir } from '@tauri-apps/api/path';
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { Play, Pause, Square, Mic } from 'lucide-react';
 import { ProcessRequest, SummaryResponse } from '../types/summary';
+import { listen } from '@tauri-apps/api/event';
 
 interface RecordingControlsProps {
   isRecording: boolean;
@@ -27,7 +28,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [stopCountdown, setStopCountdown] = useState(5);
-  const countdownInterval = useRef<NodeJS.Timeout | null>(null);
+  const countdownInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopTimeoutRef = useRef<{ stop: () => void } | null>(null);
   const MIN_RECORDING_DURATION = 2000; // 2 seconds minimum recording time
 
@@ -58,7 +59,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   // Listen for transcript updates
   useEffect(() => {
     if (isRecording) {
-      const unlisten = window.__TAURI__.event.listen('transcript-update', (event: any) => {
+      const unlisten = listen('transcript-update', (event: any) => {
         if (event.payload && event.payload.text) {
           onTranscriptReceived(event.payload.text);
         }
