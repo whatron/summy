@@ -1,24 +1,70 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
-  "productName": "frontend",
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "meeting-minutes-frontend",
   "version": "0.1.0",
-  "identifier": "com.frontend.app",
+  "identifier": "com.meetily.ai",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "frontendDist": "../out",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
   },
+  
   "app": {
     "windows": [
       {
-        "title": "frontend",
-        "width": 800,
-        "height": 600
+        "title": "meetily",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "theme": "Light",
+        "decorations": true
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "img-src": "'self' asset: https://asset.localhost data:",
+        "connect-src": "'self' http://localhost:11434 http://localhost:5167 http://localhost:8178 https://api.ollama.ai"
+      },
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$APPDATA/**"
+        ]
+      },
+      "capabilities": [
+        {
+          "identifier": "main",
+          "description": "Main window capability with file system and media access",
+          "windows": ["main"],
+          "permissions": [
+            "fs:default",
+            "fs:allow-read-file",
+            "fs:read-all",
+            "fs:write-all",
+            "fs:allow-app-read",
+            "fs:allow-app-write",
+            "fs:allow-download-write",
+            "fs:allow-download-read",
+            "fs:scope-download",
+            "core:path:default",
+            "core:event:default",
+            "core:window:default",
+            "core:app:default",
+            "core:resources:default",
+            "core:menu:default",
+            "core:tray:default",
+            "core:window:allow-set-title",
+            {
+              "identifier": "fs:scope",
+              "allow": [{ "path": "$APPDATA/*" }]
+            }
+          ]
+        }
+      ]
     }
   },
   "bundle": {
