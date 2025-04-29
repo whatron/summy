@@ -99,7 +99,10 @@ function App() {
     <main className="container">
       {/* Fixed transcript box */}
       <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 w-3/4 max-w-2xl">
-        <div className="bg-white rounded-lg shadow-lg p-4 h-48 overflow-y-auto border-2 border-gray-200" ref={transcriptBoxRef}>
+        <div 
+          className="bg-white rounded-lg p-4 h-48 overflow-y-auto border-2 border-gray-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)]" 
+          ref={transcriptBoxRef}
+        >
           <h2 className="text-lg font-semibold mb-2 text-gray-800 sticky top-0 bg-white pb-2 border-b border-gray-200">Transcript</h2>
           <p className="text-gray-600 whitespace-pre-wrap">{transcript || 'No transcript yet...'}</p>
         </div>
@@ -107,16 +110,16 @@ function App() {
 
       {/* Recording controls */}
       <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-10">
-        <div className="bg-white rounded-full shadow-lg flex items-center">
-          <RecordingControls
-            isRecording={isRecording}
-            onRecordingStop={handleRecordingStop}
-            onRecordingStart={handleRecordingStart}
+            <div className="bg-white rounded-full shadow-lg flex items-center">
+              <RecordingControls
+                isRecording={isRecording}
+                onRecordingStop={handleRecordingStop}
+                onRecordingStart={handleRecordingStart}
             onTranscriptReceived={handleTranscriptReceived}
-            barHeights={barHeights}
-          />
-        </div>
-      </div>
+                barHeights={barHeights}
+              />
+            </div>
+          </div>
     </main>
   );
 }
