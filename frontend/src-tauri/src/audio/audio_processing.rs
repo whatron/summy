@@ -151,7 +151,7 @@ pub fn resample(input: &[f32], from_sample_rate: u32, to_sample_rate: u32) -> Re
 
 pub fn write_audio_to_file(
     audio: &[f32],
-    sample_rate: u32,
+    _sample_rate: u32,
     output_path: &PathBuf,
     device: &str,
     skip_encoding: bool,

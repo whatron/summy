@@ -1,9 +1,9 @@
 use super::audio_processing::audio_to_mono; 
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::StreamError;
+use cpal::{SampleFormat, StreamError};
 use lazy_static::lazy_static;
-use log::{ error, info, warn, debug};
+use log::{error, info, warn, debug};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -12,7 +12,6 @@ use std::time::Duration;
 use std::{fmt, thread};
 use tokio::sync::{broadcast, oneshot};
 use crossbeam::channel::{bounded, Receiver, Sender};
-use tracing::{debug, info, error};
 
 lazy_static! {
     pub static ref LAST_AUDIO_CAPTURE: AtomicU64 = AtomicU64::new(
@@ -28,14 +27,17 @@ static mut AUDIO_CHANNEL: Option<(Sender<Vec<f32>>, Receiver<Vec<f32>>)> = None;
 
 pub fn init_audio_channel() {
     unsafe {
-        if AUDIO_CHANNEL.is_none() {
+        if let None = AUDIO_CHANNEL {
             AUDIO_CHANNEL = Some(bounded(1000));
         }
     }
 }
 
 pub fn get_audio_channel() -> Option<(Sender<Vec<f32>>, Receiver<Vec<f32>>)> {
-    unsafe { AUDIO_CHANNEL.clone() }
+    unsafe {
+        let ptr = &raw const AUDIO_CHANNEL;
+        (*ptr).as_ref().cloned()
+    }
 }
 
 pub fn start_audio_stream(device_name: &str, is_input: bool) -> Result<(), String> {
@@ -46,11 +48,11 @@ pub fn start_audio_stream(device_name: &str, is_input: bool) -> Result<(), Strin
     let host = cpal::default_host();
     let device = if is_input {
         host.input_devices()
-            .unwrap()
+            .map_err(|e| e.to_string())?
             .find(|d| d.name().unwrap() == device_name)
     } else {
         host.output_devices()
-            .unwrap()
+            .map_err(|e| e.to_string())?
             .find(|d| d.name().unwrap() == device_name)
     };
 
@@ -59,45 +61,39 @@ pub fn start_audio_stream(device_name: &str, is_input: bool) -> Result<(), Strin
         None => return Err(format!("Device not found: {}", device_name)),
     };
 
-    let config = device.default_input_config().unwrap();
+    let config = device.default_input_config().map_err(|e| e.to_string())?;
     info!("Audio config - Sample rate: {}, Channels: {}, Format: {:?}", 
           config.sample_rate().0, 
           config.channels(),
           config.sample_format());
 
-    let (tx, rx) = get_audio_channel().ok_or("Audio channel not initialized")?;
+    let (tx, _rx) = get_audio_channel().ok_or("Audio channel not initialized")?;
     let tx = Arc::new(tx);
     let is_running = Arc::new(AtomicBool::new(true));
+    let is_running_clone = is_running.clone();
 
     let stream = match config.sample_format() {
         SampleFormat::F32 => device.build_input_stream(
             &config.into(),
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if is_running.load(Ordering::SeqCst) {
+                if is_running_clone.load(Ordering::SeqCst) {
                     let samples = data.to_vec();
                     if let Err(e) = tx.send(samples) {
                         error!("Failed to send audio data: {}", e);
-                        is_running.store(false, Ordering::SeqCst);
+                        is_running_clone.store(false, Ordering::SeqCst);
                     }
                 }
             },
             move |err| error!("Error in audio stream: {}", err),
             None,
-        ),
+        ).map_err(|e| e.to_string())?,
         _ => return Err("Unsupported sample format".to_string()),
-    }?;
+    };
 
-    stream.play()?;
+    stream.play().map_err(|e| e.to_string())?;
     info!("Audio stream started successfully for device: {} ({})", device_name, if is_input { "input" } else { "output" });
 
-    // Store the stream and is_running flag
-    thread::spawn(move || {
-        while is_running.load(Ordering::SeqCst) {
-            thread::sleep(Duration::from_millis(100));
-        }
-        drop(stream);
-    });
-
+    IS_RUNNING.store(true, Ordering::SeqCst);
     Ok(())
 }
 
@@ -106,8 +102,9 @@ pub fn stop_audio_stream() {
     // Give a small delay to allow any pending data to be processed
     thread::sleep(Duration::from_millis(100));
     unsafe {
-        if let Some((tx, _)) = &AUDIO_CHANNEL {
-            drop(tx);
+        let ptr = &raw const AUDIO_CHANNEL;
+        if let Some((tx, _)) = (*ptr).as_ref() {
+            let _ = tx;
         }
         AUDIO_CHANNEL = None;
     }
@@ -128,16 +125,13 @@ pub fn stop_recording() -> Result<(), String> {
         return Err("No recording in progress".to_string());
     }
 
-    // Set the flag to false but keep the channel open
     IS_RUNNING.store(false, Ordering::SeqCst);
-    
-    // Give a small delay to allow any pending data to be processed
     thread::sleep(Duration::from_millis(100));
     
-    // Now we can safely close the channel
     unsafe {
-        if let Some((tx, _)) = &AUDIO_CHANNEL {
-            drop(tx);
+        let ptr = &raw const AUDIO_CHANNEL;
+        if let Some((tx, _)) = (*ptr).as_ref() {
+            let _ = tx;
         }
         AUDIO_CHANNEL = None;
     }
@@ -553,6 +547,7 @@ impl AudioStream {
 
         let is_disconnected_clone = is_disconnected.clone();
         let stream_control_tx_clone = stream_control_tx.clone();
+        let is_running_weak_clone = is_running_weak.clone();
         let stream_thread = Arc::new(tokio::sync::Mutex::new(Some(thread::spawn(move || {
             let device = device_clone;
             let device_name = device.to_string();
@@ -568,14 +563,14 @@ impl AudioStream {
                 } else if err.to_string().to_lowercase().contains("permission denied") || 
                          err.to_string().to_lowercase().contains("access denied") {
                     error!("Permission denied for audio device {}. Please check microphone permissions.", device_name_clone);
-                    if let Some(arc) = is_running_weak.upgrade() {
+                    if let Some(arc) = is_running_weak_clone.upgrade() {
                         arc.store(false, Ordering::Relaxed);
                     }
                 } else {
                     error!("an error occurred on the audio stream: {}", err);
                     if err.to_string().contains("device is no longer valid") {
                         warn!("audio device disconnected. stopping recording.");
-                        if let Some(arc) = is_running_weak.upgrade() {
+                        if let Some(arc) = is_running_weak_clone.upgrade() {
                             arc.store(false, Ordering::Relaxed);
                         }
                     }
@@ -652,6 +647,10 @@ impl AudioStream {
         })
     }
 
+    pub async fn subscribe(&self) -> broadcast::Receiver<Vec<f32>> {
+        self.transmitter.subscribe()
+    }
+
     pub async fn stop(&self) -> Result<()> {
         // Mark as disconnected first
         self.is_disconnected.store(true, Ordering::Release);
@@ -660,7 +659,7 @@ impl AudioStream {
         self.is_running.store(false, Ordering::Release);
         
         // Send stop signal and wait for confirmation
-        let (tx, rx) = oneshot::channel();
+        let (tx, _rx) = oneshot::channel();
         self.stream_control.send(StreamControl::Stop(tx))?;
 
         // Wait for thread to finish

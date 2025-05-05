@@ -102,10 +102,13 @@ def handle_audio():
             if isinstance(outputs, dict) and 'chunks' in outputs:
                 # Handle chunked output
                 for chunk in outputs['chunks']:
+                    # Ensure t1 is a valid float, use chunk_duration_ms if None
+                    t0 = chunk['timestamp'][0] if isinstance(chunk['timestamp'], tuple) else 0.0
+                    t1 = chunk['timestamp'][1] if isinstance(chunk['timestamp'], tuple) and chunk['timestamp'][1] is not None else chunk_duration_ms / 1000.0
                     segments.append({
                         "text": chunk['text'],
-                        "t0": chunk['timestamp'][0],
-                        "t1": chunk['timestamp'][1]
+                        "t0": t0,
+                        "t1": t1
                     })
             else:
                 # Handle single segment output

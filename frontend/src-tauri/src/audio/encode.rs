@@ -1,8 +1,7 @@
-use super::ffmpeg::find_ffmpeg_path;
 use super::AudioDevice;
 use std::path::PathBuf;
 use hound::{WavWriter, WavSpec};
-use tracing::{debug, error};
+use tracing::{debug};
 use std::sync::Arc;
 
 pub struct AudioInput {

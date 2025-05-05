@@ -9,9 +9,7 @@ pub mod ollama;
 
 use audio::{
     default_input_device, default_output_device, AudioStream,
-    encode_single_audio,
 };
-use ollama::{OllamaModel};
 use tauri::{Runtime, AppHandle, Emitter};
 use log::{info as log_info, error as log_error, debug as log_debug};
 use reqwest::multipart::{Form, Part};
@@ -27,9 +25,6 @@ static mut RECORDING_START_TIME: Option<std::time::Instant> = None;
 // Audio configuration constants
 const CHUNK_DURATION_MS: u32 = 30000; // 30 seconds per chunk for better sentence processing
 const WHISPER_SAMPLE_RATE: u32 = 16000; // Whisper's required sample rate
-const WAV_SAMPLE_RATE: u32 = 44100; // WAV file sample rate
-const WAV_CHANNELS: u16 = 2; // Stereo for WAV files
-const WHISPER_CHANNELS: u16 = 1; // Mono for Whisper API
 const SENTENCE_TIMEOUT_MS: u64 = 1000; // Emit incomplete sentence after 1 second of silence
 const MIN_CHUNK_DURATION_MS: u32 = 2000; // Minimum duration before sending chunk
 const MIN_RECORDING_DURATION_MS: u64 = 2000; // 2 seconds minimum
@@ -46,17 +41,16 @@ struct TranscriptUpdate {
     source: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct TranscriptSegment {
     text: String,
     t0: f32,
     t1: f32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct TranscriptResponse {
     segments: Vec<TranscriptSegment>,
-    buffer_size_ms: i32,
 }
 
 // Helper struct to accumulate transcript segments
@@ -284,7 +278,7 @@ async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     let app_handle = app.clone();
     
     // Create audio receivers
-    let mut mic_receiver = mic_stream.subscribe().await;
+    let mic_receiver = mic_stream.subscribe().await;
     let mut mic_receiver_clone = mic_receiver.resubscribe();
     let mut system_receiver = system_stream.subscribe().await;
     
@@ -348,7 +342,7 @@ async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
                 
                 // Store in global buffer
                 unsafe {
-                    if let Some(buffer) = &MIC_BUFFER {
+                    if let Some(buffer) = (*&raw const MIC_BUFFER).as_ref() {
                         if let Ok(mut guard) = buffer.lock() {
                             guard.extend(chunk_clone);
                         }
@@ -371,7 +365,7 @@ async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
                 
                 // Store in global buffer
                 unsafe {
-                    if let Some(buffer) = &SYSTEM_BUFFER {
+                    if let Some(buffer) = (*&raw const SYSTEM_BUFFER).as_ref() {
                         if let Ok(mut guard) = buffer.lock() {
                             guard.extend(chunk_clone);
                         }
@@ -414,101 +408,6 @@ async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
                 // Save debug chunks
                 let chunk_num = chunk_counter_clone.fetch_add(1, Ordering::SeqCst);
                 log_info!("Processing chunk {}", chunk_num);
-                
-                // // Save mic chunk
-                // if !mic_samples.is_empty() {
-                //     let mic_chunk_path = debug_dir.join(format!("chunk_{}_mic.wav", chunk_num));
-                //     log_info!("Saving mic chunk to {:?}", mic_chunk_path);
-                //     let mic_bytes: Vec<u8> = mic_samples.iter()
-                //         .flat_map(|&sample| {
-                //             let clamped = sample.max(-1.0).min(1.0);
-                //             clamped.to_le_bytes().to_vec()
-                //         })
-                //         .collect();
-                //     if let Err(e) = encode_single_audio(
-                //         &mic_bytes,
-                //         WAV_SAMPLE_RATE,
-                //         1, // Mono for mic
-                //         &mic_chunk_path,
-                //     ) {
-                //         log_error!("Failed to save mic chunk {}: {}", chunk_num, e);
-                //     } else {
-                //         log_info!("Successfully saved mic chunk {} with {} samples", chunk_num, mic_samples.len());
-                //     }
-                // } else {
-                //     log_info!("No mic samples to save for chunk {}", chunk_num);
-                // }
-
-                // Save system chunk
-                // if !system_samples.is_empty() {
-                //     let system_chunk_path = debug_dir.join(format!("chunk_{}_system.wav", chunk_num));
-                //     log_info!("Saving system chunk to {:?}", system_chunk_path);
-                //     let system_bytes: Vec<u8> = system_samples.iter()
-                //         .flat_map(|&sample| {
-                //             let clamped = sample.max(-1.0).min(1.0);
-                //             clamped.to_le_bytes().to_vec()
-                //         })
-                //         .collect();
-                //     if let Err(e) = encode_single_audio(
-                //         &system_bytes,
-                //         WAV_SAMPLE_RATE,
-                //         2, // Stereo for system
-                //         &system_chunk_path,
-                //     ) {
-                //         log_error!("Failed to save system chunk {}: {}", chunk_num, e);
-                //     } else {
-                //         log_info!("Successfully saved system chunk {} with {} samples", chunk_num, system_samples.len());
-                //     }
-                // } else {
-                //     log_info!("No system samples to save for chunk {}", chunk_num);
-                // }
-                
-                // Save mixed chunk
-                // if !chunk_to_send.is_empty() {
-                //     let mixed_chunk_path = debug_dir.join(format!("chunk_{}_mixed.wav", chunk_num));
-                //     log_info!("Saving mixed chunk to {:?}", mixed_chunk_path);
-                //     let mixed_bytes: Vec<u8> = chunk_to_send.iter()
-                //         .flat_map(|&sample| {
-                //             let clamped = sample.max(-1.0).min(1.0);
-                //             clamped.to_le_bytes().to_vec()
-                //         })
-                //         .collect();
-                //     match encode_single_audio(
-                //         &mixed_bytes,
-                //         WAV_SAMPLE_RATE,
-                //         WAV_CHANNELS,
-                //         &mixed_chunk_path,
-                //     ) {
-                //         Ok(_) => {
-                //             log_info!("Successfully saved mixed chunk {} with {} samples", chunk_num, chunk_to_send.len());
-                //         }
-                //         Err(e) => {
-                //             // Check if it's a broken pipe error
-                //             if e.to_string().contains("Broken pipe") {
-                //                 log_debug!("Broken pipe while saving chunk {} - this is expected during cleanup", chunk_num);
-                //             } else {
-                //                 log_error!("Failed to save mixed chunk {}: {}", chunk_num, e);
-                //             }
-                //         }
-                //     }
-                // } else {
-                //     log_info!("No mixed samples to save for chunk {}", chunk_num);
-                // }
-                
-                // Keep only last 10 chunks
-                // if chunk_num > 10 {
-                //     if let Ok(entries) = fs::read_dir(&debug_dir) {
-                //         for entry in entries.flatten() {
-                //             if let Some(name) = entry.file_name().to_str() {
-                //                 if name.starts_with("chunk_") && 
-                //                    name.ends_with(".wav") && 
-                //                    !name.contains(&format!("chunk_{}", chunk_num)) {
-                //                     let _ = fs::remove_file(entry.path());
-                //                 }
-                //             }
-                //         }
-                //     }
-                // }
                 
                 // Process chunk for Whisper API
                 let whisper_samples = if sample_rate != WHISPER_SAMPLE_RATE {
@@ -589,7 +488,7 @@ async fn stop_recording(args: RecordingArgs) -> Result<(), String> {
     
     unsafe {
         // Stop the running flag for audio streams first
-        if let Some(is_running) = &IS_RUNNING {
+        if let Some(is_running) = (*&raw const IS_RUNNING).as_ref() {
             // Set running flag to false first to stop the tokio task
             is_running.store(false, Ordering::SeqCst);
             log_info!("Set recording flag to false, waiting for streams to stop...");
@@ -598,7 +497,7 @@ async fn stop_recording(args: RecordingArgs) -> Result<(), String> {
             tokio::time::sleep(Duration::from_millis(100)).await;
             
             // Stop mic stream if it exists
-            if let Some(mic_stream) = &MIC_STREAM {
+            if let Some(mic_stream) = (*&raw const MIC_STREAM).as_ref() {
                 log_info!("Stopping microphone stream...");
                 if let Err(e) = mic_stream.stop().await {
                     log_error!("Error stopping mic stream: {}", e);
@@ -608,7 +507,7 @@ async fn stop_recording(args: RecordingArgs) -> Result<(), String> {
             }
             
             // Stop system stream if it exists
-            if let Some(system_stream) = &SYSTEM_STREAM {
+            if let Some(system_stream) = (*&raw const SYSTEM_STREAM).as_ref() {
                 log_info!("Stopping system stream...");
                 if let Err(e) = system_stream.stop().await {
                     log_error!("Error stopping system stream: {}", e);
@@ -629,7 +528,7 @@ async fn stop_recording(args: RecordingArgs) -> Result<(), String> {
     
     // Get final buffers
     let mic_data = unsafe {
-        if let Some(buffer) = &MIC_BUFFER {
+        if let Some(buffer) = (*&raw const MIC_BUFFER).as_ref() {
             if let Ok(guard) = buffer.lock() {
                 guard.clone()
             } else {
@@ -641,7 +540,7 @@ async fn stop_recording(args: RecordingArgs) -> Result<(), String> {
     };
     
     let system_data = unsafe {
-        if let Some(buffer) = &SYSTEM_BUFFER {
+        if let Some(buffer) = (*&raw const SYSTEM_BUFFER).as_ref() {
             if let Ok(guard) = buffer.lock() {
                 guard.clone()
             } else {
@@ -787,18 +686,6 @@ async fn save_transcript(file_path: String, content: String) -> Result<(), Strin
 
     log::info!("Transcript saved successfully");
     Ok(())
-}
-
-// Helper function to convert stereo to mono
-fn stereo_to_mono(stereo: &[i16]) -> Vec<i16> {
-    let mut mono = Vec::with_capacity(stereo.len() / 2);
-    for chunk in stereo.chunks_exact(2) {
-        let left = chunk[0] as i32;
-        let right = chunk[1] as i32;
-        let combined = ((left + right) / 2) as i16;
-        mono.push(combined);
-    }
-    mono
 }
 
 #[tauri::command]
