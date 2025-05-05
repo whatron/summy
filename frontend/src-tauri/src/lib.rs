@@ -801,6 +801,26 @@ fn stereo_to_mono(stereo: &[i16]) -> Vec<i16> {
     mono
 }
 
+#[tauri::command]
+async fn get_file_stats(path: String) -> Result<serde_json::Value, String> {
+    use std::fs;
+    match fs::metadata(&path) {
+        Ok(metadata) => {
+            Ok(serde_json::json!({
+                "exists": true,
+                "size": metadata.len(),
+                "created": metadata.created().ok().map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()),
+                "modified": metadata.modified().ok().map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()),
+            }))
+        },
+        Err(e) => Ok(serde_json::json!({
+            "exists": false,
+            "error": e.to_string()
+        }))
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     log::set_max_level(log::LevelFilter::Info);
     
@@ -821,6 +841,7 @@ pub fn run() {
             is_recording,
             read_audio_file,
             save_transcript,
+            get_file_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

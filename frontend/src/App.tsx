@@ -63,7 +63,7 @@ function App() {
       
       const dataDir = await appDataDir();
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const audioPath = `${dataDir}recording-${timestamp}.wav`;
+      const audioPath = `${dataDir}/audio/recording-${timestamp}.wav`;
 
       // Stop recording and save audio
       await invoke('stop_recording', { 
@@ -73,6 +73,34 @@ function App() {
       });
       console.log('Recording stopped successfully');
       setIsRecording(false);
+
+      // Debug: Check if file exists and its size
+      const fileStats = await invoke('get_file_stats', { path: audioPath });
+      console.log('Audio file stats:', fileStats);
+
+      // Send audio to server
+      const formData = new FormData();
+      const audioFile = await fetch(audioPath).then(r => r.blob());
+      console.log('Audio blob:', {
+        size: audioFile.size,
+        type: audioFile.type
+      });
+      formData.append('audio', audioFile, `recording-${timestamp}.wav`);
+
+      const response = await fetch('http://localhost:8178/stream', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${await response.text()}`);
+      }
+
+      const data = await response.json();
+      if (data.segments && data.segments.length > 0) {
+        const transcript = data.segments.map((s: any) => s.text).join(' ');
+        handleTranscriptReceived(transcript);
+      }
     } catch (error) {
       console.error('Failed to stop recording:', error);
       if (error instanceof Error) {

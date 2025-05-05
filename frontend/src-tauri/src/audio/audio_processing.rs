@@ -159,17 +159,27 @@ pub fn write_audio_to_file(
     let new_file_name = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
     let sanitized_device_name = device.replace(['/', '\\'], "_");
     let file_path = PathBuf::from(output_path)
-        .join(format!("{}_{}.mp4", sanitized_device_name, new_file_name))
+        .join(format!("{}_{}.wav", sanitized_device_name, new_file_name))
         .to_str()
         .expect("Failed to create valid path")
         .to_string();
     let file_path_clone = file_path.clone();
-    // Run FFmpeg in a separate task
+    
+    // Run encoding in a separate task
     if !skip_encoding {
+        // Convert f32 samples to bytes
+        let audio_bytes: Vec<u8> = audio.iter()
+            .flat_map(|&sample| {
+                // Convert f32 to i16 and then to bytes
+                let i16_sample = (sample * i16::MAX as f32) as i16;
+                i16_sample.to_le_bytes()
+            })
+            .collect();
+            
         encode_single_audio(
-            bytemuck::cast_slice(audio),
-            sample_rate,
-            1,
+            &audio_bytes,
+            16000,  // Force 16kHz sample rate
+            1,      // Force mono
             &file_path.into(),
         )?;
     }
