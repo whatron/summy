@@ -9,6 +9,7 @@ import { listen } from '@tauri-apps/api/event';
 
 interface RecordingControlsProps {
   isRecording: boolean;
+  isLoading: boolean;
   barHeights: string[];
   onRecordingStop: () => void;
   onRecordingStart: () => void;
@@ -17,6 +18,7 @@ interface RecordingControlsProps {
 
 export const RecordingControls: React.FC<RecordingControlsProps> = ({
   isRecording,
+  isLoading,
   barHeights,
   onRecordingStop,
   onRecordingStart,
@@ -242,12 +244,14 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                   onClick={isRecording ? 
                     (isStopping ? cancelStopRecording : handleStopRecording) : 
                     handleStartRecording}
-                  disabled={isStarting || isProcessing}
-                  className={`w-12 h-12 flex items-center justify-center ${
-                    isStarting || isProcessing ? 'bg-gray-400' : 'bg-red-500 hover:bg-red-600'
+                  disabled={isStarting || isProcessing || isLoading}
+                  className={`w-12 h-12 flex items-center justify-center cursor-pointer ${
+                    isStarting || isProcessing || isLoading ? 'bg-gray-400' : 'bg-red-500 hover:bg-red-600'
                   } rounded-full text-white transition-colors relative`}
                 >
-                  {isRecording ? (
+                  {isLoading ? (
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  ) : isRecording ? (
                     <>
                       <Square size={20} />
                       {isStopping && (
