@@ -75,9 +75,9 @@ rubato = "0.15.0"
 ffmpeg-sidecar = { git = "https://github.com/nathanbabcock/ffmpeg-sidecar", branch = "main" }
 
 # Common Tauri configuration
-tauri = { version = "2.0.6", features = [ "macos-private-api", "protocol-asset"] }
-tauri-plugin-fs = "2.2.0"
-tauri-plugin-dialog = "2.0.0"
+tauri = { version = "2.5.1", features = [ "macos-private-api", "protocol-asset"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri = { version = "2.0.6", features = ["protocol-asset", "macos-private-api"] }

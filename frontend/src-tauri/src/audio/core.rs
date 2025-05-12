@@ -1,9 +1,10 @@
-use super::audio_processing::audio_to_mono; 
+use super::audio_processing::audio_to_mono;
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamError};
+use crossbeam::channel::{bounded, Receiver, Sender};
 use lazy_static::lazy_static;
-use log::{error, info, warn, debug};
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -11,7 +12,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, thread};
 use tokio::sync::{broadcast, oneshot};
-use crossbeam::channel::{bounded, Receiver, Sender};
 
 lazy_static! {
     pub static ref LAST_AUDIO_CAPTURE: AtomicU64 = AtomicU64::new(
@@ -62,10 +62,12 @@ pub fn start_audio_stream(device_name: &str, is_input: bool) -> Result<(), Strin
     };
 
     let config = device.default_input_config().map_err(|e| e.to_string())?;
-    info!("Audio config - Sample rate: {}, Channels: {}, Format: {:?}", 
-          config.sample_rate().0, 
-          config.channels(),
-          config.sample_format());
+    info!(
+        "Audio config - Sample rate: {}, Channels: {}, Format: {:?}",
+        config.sample_rate().0,
+        config.channels(),
+        config.sample_format()
+    );
 
     let (tx, _rx) = get_audio_channel().ok_or("Audio channel not initialized")?;
     let tx = Arc::new(tx);
@@ -73,25 +75,31 @@ pub fn start_audio_stream(device_name: &str, is_input: bool) -> Result<(), Strin
     let is_running_clone = is_running.clone();
 
     let stream = match config.sample_format() {
-        SampleFormat::F32 => device.build_input_stream(
-            &config.into(),
-            move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if is_running_clone.load(Ordering::SeqCst) {
-                    let samples = data.to_vec();
-                    if let Err(e) = tx.send(samples) {
-                        error!("Failed to send audio data: {}", e);
-                        is_running_clone.store(false, Ordering::SeqCst);
+        SampleFormat::F32 => device
+            .build_input_stream(
+                &config.into(),
+                move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    if is_running_clone.load(Ordering::SeqCst) {
+                        let samples = data.to_vec();
+                        if let Err(e) = tx.send(samples) {
+                            error!("Failed to send audio data: {}", e);
+                            is_running_clone.store(false, Ordering::SeqCst);
+                        }
                     }
-                }
-            },
-            move |err| error!("Error in audio stream: {}", err),
-            None,
-        ).map_err(|e| e.to_string())?,
+                },
+                move |err| error!("Error in audio stream: {}", err),
+                None,
+            )
+            .map_err(|e| e.to_string())?,
         _ => return Err("Unsupported sample format".to_string()),
     };
 
     stream.play().map_err(|e| e.to_string())?;
-    info!("Audio stream started successfully for device: {} ({})", device_name, if is_input { "input" } else { "output" });
+    info!(
+        "Audio stream started successfully for device: {} ({})",
+        device_name,
+        if is_input { "input" } else { "output" }
+    );
 
     IS_RUNNING.store(true, Ordering::SeqCst);
     Ok(())
@@ -127,7 +135,7 @@ pub fn stop_recording() -> Result<(), String> {
 
     IS_RUNNING.store(false, Ordering::SeqCst);
     thread::sleep(Duration::from_millis(100));
-    
+
     unsafe {
         let ptr = &raw const AUDIO_CHANNEL;
         if let Some((tx, _)) = (*ptr).as_ref() {
@@ -135,7 +143,7 @@ pub fn stop_recording() -> Result<(), String> {
         }
         AUDIO_CHANNEL = None;
     }
-    
+
     Ok(())
 }
 
@@ -240,11 +248,11 @@ pub fn parse_audio_device(name: &str) -> Result<AudioDevice> {
 #[cfg(target_os = "windows")]
 fn configure_windows_audio(host: &cpal::Host) -> Result<Vec<AudioDevice>> {
     let mut devices = Vec::new();
-    
+
     // Get WASAPI devices
     if let Ok(wasapi_host) = cpal::host_from_id(cpal::HostId::Wasapi) {
         info!("Using WASAPI host for Windows audio device enumeration");
-        
+
         // Add output devices (including loopback)
         if let Ok(output_devices) = wasapi_host.output_devices() {
             for device in output_devices {
@@ -272,10 +280,12 @@ fn configure_windows_audio(host: &cpal::Host) -> Result<Vec<AudioDevice>> {
     } else {
         warn!("Failed to create WASAPI host, falling back to default host");
     }
-    
+
     // If WASAPI failed or returned no devices, try default host as fallback
     if devices.is_empty() {
-        debug!("WASAPI device enumeration failed or returned no devices, falling back to default host");
+        debug!(
+            "WASAPI device enumeration failed or returned no devices, falling back to default host"
+        );
         // Add regular input devices
         if let Ok(input_devices) = host.input_devices() {
             for device in input_devices {
@@ -300,11 +310,11 @@ fn configure_windows_audio(host: &cpal::Host) -> Result<Vec<AudioDevice>> {
             warn!("Failed to enumerate output devices from default host");
         }
     }
-    
+
     // If we still have no devices, add default devices
     if devices.is_empty() {
         warn!("No audio devices found, adding default devices only");
-        
+
         // Try to add default input device
         if let Some(device) = host.default_input_device() {
             if let Ok(name) = device.name() {
@@ -312,7 +322,7 @@ fn configure_windows_audio(host: &cpal::Host) -> Result<Vec<AudioDevice>> {
                 devices.push(AudioDevice::new(name, DeviceType::Input));
             }
         }
-        
+
         // Try to add default output device
         if let Some(device) = host.default_output_device() {
             if let Ok(name) = device.name() {
@@ -321,7 +331,7 @@ fn configure_windows_audio(host: &cpal::Host) -> Result<Vec<AudioDevice>> {
             }
         }
     }
-    
+
     info!("Found {} Windows audio devices", devices.len());
     Ok(devices)
 }
@@ -329,14 +339,14 @@ fn configure_windows_audio(host: &cpal::Host) -> Result<Vec<AudioDevice>> {
 #[cfg(target_os = "linux")]
 fn configure_linux_audio(host: &cpal::Host) -> Result<Vec<AudioDevice>> {
     let mut devices = Vec::new();
-    
+
     // Add input devices
     for device in host.input_devices()? {
         if let Ok(name) = device.name() {
             devices.push(AudioDevice::new(name, DeviceType::Input));
         }
     }
-    
+
     // Add PulseAudio monitor sources for system audio
     if let Ok(pulse_host) = cpal::host_from_id(cpal::HostId::Pulse) {
         for device in pulse_host.input_devices()? {
@@ -345,13 +355,13 @@ fn configure_linux_audio(host: &cpal::Host) -> Result<Vec<AudioDevice>> {
                 if name.contains("monitor") {
                     devices.push(AudioDevice::new(
                         format!("{} (System Audio)", name),
-                        DeviceType::Output
+                        DeviceType::Output,
                     ));
                 }
             }
         }
     }
-    
+
     Ok(devices)
 }
 
@@ -520,15 +530,18 @@ impl AudioStream {
         device: Arc<AudioDevice>,
         is_running: Arc<AtomicBool>,
     ) -> Result<Self> {
-        info!("Initializing audio stream for device: {}", device.to_string());
+        info!(
+            "Initializing audio stream for device: {}",
+            device.to_string()
+        );
         let (tx, _) = broadcast::channel::<Vec<f32>>(1000);
         let tx_clone = tx.clone();
-        
+
         let (cpal_audio_device, config) = match get_device_and_config(&device).await {
             Ok((device, config)) => {
                 info!("Successfully got device and config for: {}", device.name()?);
                 (device, config)
-            },
+            }
             Err(e) => {
                 error!("Failed to get device and config: {}", e);
                 return Err(anyhow!("Failed to initialize audio device: {}", e));
@@ -536,8 +549,12 @@ impl AudioStream {
         };
 
         let channels = config.channels();
-        info!("Audio config - Sample rate: {}, Channels: {}, Format: {:?}", 
-            config.sample_rate().0, channels, config.sample_format());
+        info!(
+            "Audio config - Sample rate: {}, Channels: {}, Format: {:?}",
+            config.sample_rate().0,
+            channels,
+            config.sample_format()
+        );
 
         let is_running_weak = Arc::downgrade(&is_running);
         let is_disconnected = Arc::new(AtomicBool::new(false));
@@ -554,14 +571,23 @@ impl AudioStream {
             let device_name_clone = device_name.clone();
             let config = config_clone;
             info!("Starting audio stream thread for device: {}", device_name);
-            
+
             let error_callback = move |err: StreamError| {
-                if err.to_string().contains("The requested device is no longer available") {
-                    warn!("audio device {} disconnected. stopping recording.", device_name_clone);
-                    stream_control_tx_clone.send(StreamControl::Stop(oneshot::channel().0)).unwrap();
+                if err
+                    .to_string()
+                    .contains("The requested device is no longer available")
+                {
+                    warn!(
+                        "audio device {} disconnected. stopping recording.",
+                        device_name_clone
+                    );
+                    stream_control_tx_clone
+                        .send(StreamControl::Stop(oneshot::channel().0))
+                        .unwrap();
                     is_disconnected_clone.store(true, Ordering::Relaxed);
-                } else if err.to_string().to_lowercase().contains("permission denied") || 
-                         err.to_string().to_lowercase().contains("access denied") {
+                } else if err.to_string().to_lowercase().contains("permission denied")
+                    || err.to_string().to_lowercase().contains("access denied")
+                {
                     error!("Permission denied for audio device {}. Please check microphone permissions.", device_name_clone);
                     if let Some(arc) = is_running_weak_clone.upgrade() {
                         arc.store(false, Ordering::Relaxed);
@@ -619,9 +645,12 @@ impl AudioStream {
                 }
                 return;
             }
-            
-            info!("Audio stream started successfully for device: {}", device_name);
-            
+
+            info!(
+                "Audio stream started successfully for device: {}",
+                device_name
+            );
+
             if let Ok(StreamControl::Stop(response)) = stream_control_rx.recv() {
                 info!("stopping audio stream...");
                 // First stop the stream
@@ -654,10 +683,10 @@ impl AudioStream {
     pub async fn stop(&self) -> Result<()> {
         // Mark as disconnected first
         self.is_disconnected.store(true, Ordering::Release);
-        
+
         // Set running flag to false
         self.is_running.store(false, Ordering::Release);
-        
+
         // Send stop signal and wait for confirmation
         let (tx, _rx) = oneshot::channel();
         self.stream_control.send(StreamControl::Stop(tx))?;
@@ -684,7 +713,9 @@ impl AudioStream {
 }
 
 #[cfg(target_os = "windows")]
-fn get_windows_device(audio_device: &AudioDevice) -> Result<(cpal::Device, cpal::SupportedStreamConfig)> {
+fn get_windows_device(
+    audio_device: &AudioDevice,
+) -> Result<(cpal::Device, cpal::SupportedStreamConfig)> {
     let wasapi_host = cpal::host_from_id(cpal::HostId::Wasapi)
         .map_err(|e| anyhow!("Failed to create WASAPI host: {}", e))?;
 
@@ -696,7 +727,7 @@ fn get_windows_device(audio_device: &AudioDevice) -> Result<(cpal::Device, cpal:
     } else {
         &audio_device.name
     };
-    
+
     info!("Looking for Windows device with base name: {}", base_name);
 
     match audio_device.device_type {
@@ -707,33 +738,41 @@ fn get_windows_device(audio_device: &AudioDevice) -> Result<(cpal::Device, cpal:
                     // Check if the device name contains our base name
                     if name == base_name || name.contains(base_name) {
                         info!("Found matching input device: {}", name);
-                        
+
                         // Try to get default input config with better error logging
                         match device.default_input_config() {
                             Ok(default_config) => {
                                 info!("Using default input config: {:?}", default_config);
                                 return Ok((device, default_config));
-                            },
+                            }
                             Err(e) => {
                                 warn!("Failed to get default input config: {}. Trying supported configs...", e);
-                                
+
                                 // Try to find a supported configuration
                                 if let Ok(supported_configs) = device.supported_input_configs() {
                                     let mut configs: Vec<_> = supported_configs.collect();
                                     if configs.is_empty() {
                                         warn!("No supported input configurations found for device: {}", name);
                                     } else {
-                                        info!("Found {} supported input configurations", configs.len());
-                                        
+                                        info!(
+                                            "Found {} supported input configurations",
+                                            configs.len()
+                                        );
+
                                         // First try to find F32 format with 2 channels (stereo)
                                         for config in &configs {
-                                            if config.sample_format() == cpal::SampleFormat::F32 && config.channels() == 2 {
+                                            if config.sample_format() == cpal::SampleFormat::F32
+                                                && config.channels() == 2
+                                            {
                                                 let config = config.with_max_sample_rate();
-                                                info!("Using stereo F32 input config: {:?}", config);
+                                                info!(
+                                                    "Using stereo F32 input config: {:?}",
+                                                    config
+                                                );
                                                 return Ok((device, config));
                                             }
                                         }
-                                        
+
                                         // Then try any F32 format
                                         for config in &configs {
                                             if config.sample_format() == cpal::SampleFormat::F32 {
@@ -742,7 +781,7 @@ fn get_windows_device(audio_device: &AudioDevice) -> Result<(cpal::Device, cpal:
                                                 return Ok((device, config));
                                             }
                                         }
-                                        
+
                                         // Finally, use the first available config
                                         let config = configs[0].with_max_sample_rate();
                                         info!("Using fallback input config: {:?}", config);
@@ -751,14 +790,17 @@ fn get_windows_device(audio_device: &AudioDevice) -> Result<(cpal::Device, cpal:
                                 } else {
                                     warn!("Could not enumerate supported configurations for device: {}", name);
                                 }
-                                
-                                return Err(anyhow!("No compatible input configuration found for device: {}", name));
+
+                                return Err(anyhow!(
+                                    "No compatible input configuration found for device: {}",
+                                    name
+                                ));
                             }
                         }
                     }
                 }
             }
-            
+
             // If we didn't find a matching device, try the default input device as fallback
             info!("No matching input device found, trying default input device");
             if let Some(default_device) = wasapi_host.default_input_device() {
@@ -781,24 +823,29 @@ fn get_windows_device(audio_device: &AudioDevice) -> Result<(cpal::Device, cpal:
                     // Check if the device name contains our base name
                     if name == base_name || name.contains(base_name) {
                         info!("Found matching output device: {}", name);
-                        
+
                         // For output devices, we want to use them in loopback mode
                         if let Ok(supported_configs) = device.supported_output_configs() {
                             let mut configs: Vec<_> = supported_configs.collect();
                             if configs.is_empty() {
-                                warn!("No supported output configurations found for device: {}", name);
+                                warn!(
+                                    "No supported output configurations found for device: {}",
+                                    name
+                                );
                             } else {
                                 info!("Found {} supported output configurations", configs.len());
-                                
+
                                 // Try to find a config that supports f32 format with 2 channels (stereo)
                                 for config in &configs {
-                                    if config.sample_format() == cpal::SampleFormat::F32 && config.channels() == 2 {
+                                    if config.sample_format() == cpal::SampleFormat::F32
+                                        && config.channels() == 2
+                                    {
                                         let config = config.with_max_sample_rate();
                                         info!("Using stereo F32 output config: {:?}", config);
                                         return Ok((device, config));
                                     }
                                 }
-                                
+
                                 // Then try any F32 format
                                 for config in &configs {
                                     if config.sample_format() == cpal::SampleFormat::F32 {
@@ -807,16 +854,19 @@ fn get_windows_device(audio_device: &AudioDevice) -> Result<(cpal::Device, cpal:
                                         return Ok((device, config));
                                     }
                                 }
-                                
+
                                 // Finally, use the first available config
                                 let config = configs[0].with_max_sample_rate();
                                 info!("Using fallback output config: {:?}", config);
                                 return Ok((device, config));
                             }
                         } else {
-                            warn!("Could not enumerate supported configurations for device: {}", name);
+                            warn!(
+                                "Could not enumerate supported configurations for device: {}",
+                                name
+                            );
                         }
-                        
+
                         // If we couldn't get supported configs, try default
                         if let Ok(default_config) = device.default_output_config() {
                             info!("Using default output config: {:?}", default_config);
@@ -825,7 +875,7 @@ fn get_windows_device(audio_device: &AudioDevice) -> Result<(cpal::Device, cpal:
                     }
                 }
             }
-            
+
             // If we didn't find a matching device, try the default output device as fallback
             info!("No matching output device found, trying default output device");
             if let Some(default_device) = wasapi_host.default_output_device() {
@@ -833,7 +883,8 @@ fn get_windows_device(audio_device: &AudioDevice) -> Result<(cpal::Device, cpal:
                     info!("Using default output device: {}", name);
                     if let Ok(config) = default_device.default_output_config() {
                         return Ok((default_device, config));
-                    } else if let Ok(supported_configs) = default_device.supported_output_configs() {
+                    } else if let Ok(supported_configs) = default_device.supported_output_configs()
+                    {
                         if let Some(config) = supported_configs.into_iter().next() {
                             return Ok((default_device, config.with_max_sample_rate()));
                         }
@@ -843,7 +894,10 @@ fn get_windows_device(audio_device: &AudioDevice) -> Result<(cpal::Device, cpal:
         }
     }
 
-    Err(anyhow!("Device not found or no compatible configuration available: {}", audio_device.name))
+    Err(anyhow!(
+        "Device not found or no compatible configuration available: {}",
+        audio_device.name
+    ))
 }
 
 pub async fn get_device_and_config(
@@ -857,15 +911,15 @@ pub async fn get_device_and_config(
     #[cfg(not(target_os = "windows"))]
     {
         let host = cpal::default_host();
-        
+
         match audio_device.device_type {
             DeviceType::Input => {
                 for device in host.input_devices()? {
                     if let Ok(name) = device.name() {
                         if name == audio_device.name {
-                            let default_config = device
-                                .default_input_config()
-                                .map_err(|e| anyhow!("Failed to get default input config: {}", e))?;
+                            let default_config = device.default_input_config().map_err(|e| {
+                                anyhow!("Failed to get default input config: {}", e)
+                            })?;
                             return Ok((device, default_config));
                         }
                     }
@@ -878,9 +932,10 @@ pub async fn get_device_and_config(
                         for device in host.input_devices()? {
                             if let Ok(name) = device.name() {
                                 if name == audio_device.name {
-                                    let default_config = device
-                                        .default_input_config()
-                                        .map_err(|e| anyhow!("Failed to get default input config: {}", e))?;
+                                    let default_config =
+                                        device.default_input_config().map_err(|e| {
+                                            anyhow!("Failed to get default input config: {}", e)
+                                        })?;
                                     return Ok((device, default_config));
                                 }
                             }
@@ -895,9 +950,10 @@ pub async fn get_device_and_config(
                         for device in pulse_host.input_devices()? {
                             if let Ok(name) = device.name() {
                                 if name == audio_device.name {
-                                    let default_config = device
-                                        .default_input_config()
-                                        .map_err(|e| anyhow!("Failed to get default input config: {}", e))?;
+                                    let default_config =
+                                        device.default_input_config().map_err(|e| {
+                                            anyhow!("Failed to get default input config: {}", e)
+                                        })?;
                                     return Ok((device, default_config));
                                 }
                             }
@@ -906,7 +962,7 @@ pub async fn get_device_and_config(
                 }
             }
         }
-        
+
         Err(anyhow!("Device not found: {}", audio_device.name))
     }
 }

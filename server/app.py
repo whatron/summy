@@ -21,20 +21,6 @@ MAX_AUDIO_AGE_HOURS = 24  # Keep audio files for 24 hours
 if not os.path.exists(AUDIO_DIR):
     os.makedirs(AUDIO_DIR)
 
-# List of sample sentences for random transcription
-SAMPLE_SENTENCES = [
-    "Hello, how are you today?",
-    "The weather is beautiful outside.",
-    "I'm working on an interesting project.",
-    "Can you help me with this task?",
-    "Let's meet for coffee tomorrow.",
-    "The meeting went well.",
-    "I need to finish this report by Friday.",
-    "What's your favorite programming language?",
-    "The new feature is working as expected.",
-    "Let's discuss this in more detail.",
-]
-
 def cleanup_old_audio():
     """Remove audio files older than MAX_AUDIO_AGE_HOURS"""
     current_time = time.time()
@@ -124,7 +110,7 @@ def handle_audio():
                 "automatic-speech-recognition",
                 model="openai/whisper-large-v3",
                 torch_dtype=torch.float16,
-                device="mps:0",
+                device="mps:0" if torch.backends.mps.is_available() else "cpu",
                 chunk_length_s=30,
                 stride_length_s=5,  # Add stride to prevent overlap
                 batch_size=16,
@@ -190,7 +176,7 @@ def handle_audio():
 def process_wav():
     """Process a single WAV file and return the transcription"""
     # Get the WAV file from the request
-    wav_file = request.files.get('wav')
+    wav_file = request.files.get('audio')
     
     if wav_file:
         try:
@@ -293,6 +279,89 @@ def process_wav():
             return jsonify({"error": f"Failed to process WAV file: {str(e)}"}), 500
     
     return jsonify({"error": "No WAV file received"}), 400
+
+@app.route('/summarize', methods=['POST'])
+def summarize():
+    """Generate a summary from the transcript using T5-small"""
+    try:
+        data = request.get_json()
+        transcript = data.get('transcript', '')
+        
+        if not transcript:
+            return jsonify({"error": "No transcript provided"}), 400
+
+        # Initialize T5 pipeline
+        summarizer = pipeline(
+            "summarization",
+            model="t5-small",
+            device="mps:0" if torch.backends.mps.is_available() else "cpu"
+        )
+
+        # Split transcript into chunks if it's too long (T5 has a max input length)
+        max_chunk_length = 512
+        chunks = [transcript[i:i + max_chunk_length] for i in range(0, len(transcript), max_chunk_length)]
+        
+        # Process each chunk
+        summaries = []
+        for chunk in chunks:
+            # Calculate appropriate max_length based on input length
+            input_length = len(chunk.split())
+            max_length = min(max(input_length // 2, 30), 100)  # Between 30 and 100 tokens
+            min_length = max(input_length // 4, 20)  # Between 20 and 50% of input
+            
+            # Generate summary for the chunk
+            summary = summarizer(chunk, 
+                               max_length=max_length, 
+                               min_length=min_length, 
+                               do_sample=False)
+            summaries.append(summary[0]['summary_text'])
+
+        # Combine summaries
+        combined_summary = " ".join(summaries)
+
+        # Extract key information using T5 for specific aspects
+        def extract_aspect(text, aspect_prompt):
+            input_length = len(text.split())
+            max_length = min(max(input_length // 3, 20), 50)  # Shorter for aspect extraction
+            min_length = max(input_length // 6, 10)  # Even shorter for aspect extraction
+            
+            prompt = f"{aspect_prompt}: {text}"
+            result = summarizer(prompt, 
+                              max_length=max_length, 
+                              min_length=min_length, 
+                              do_sample=False)
+            return result[0]['summary_text'].split(", ")
+
+        # Generate structured summary
+        summary = {
+            "summary": {
+                "main_concepts": extract_aspect(combined_summary, "Extract main concepts"),
+                "key_definitions": extract_aspect(combined_summary, "Extract key definitions"),
+                "important_formulas": extract_aspect(combined_summary, "Extract important formulas"),
+                "examples": extract_aspect(combined_summary, "Extract examples"),
+                "learning_objectives": extract_aspect(combined_summary, "Extract learning objectives"),
+                "prerequisites": extract_aspect(combined_summary, "Extract prerequisites"),
+                "sentiment": "informative",  # Could be enhanced with sentiment analysis
+                "confidence_score": 0.85,  # Could be enhanced with confidence scoring
+                "difficulty_level": "intermediate"  # Could be enhanced with difficulty analysis
+            },
+            "transcript_id": f"lecture_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            "processing_time": 1.5,
+            "lecture_metadata": {
+                "subject": "General",  # Could be enhanced with subject detection
+                "topic": "Lecture",    # Could be enhanced with topic detection
+                "level": "General",    # Could be enhanced with level detection
+                "estimated_duration": "60 minutes"  # Could be enhanced with duration estimation
+            }
+        }
+        
+        return jsonify(summary)
+        
+    except Exception as e:
+        print(f"Error generating summary: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({"error": f"Failed to generate summary: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8178, debug=True) 

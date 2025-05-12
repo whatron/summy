@@ -22,7 +22,7 @@ pub fn normalize_v2(audio: &[f32]) -> Vec<f32> {
     }
 
     // Increase target RMS for better voice volume while keeping peak in check
-    let target_rms = 0.9;  // Increased from 0.6
+    let target_rms = 0.9; // Increased from 0.6
     let target_peak = 0.95; // Slightly reduced to prevent clipping
 
     let rms_scaling = target_rms / rms;
@@ -164,22 +164,23 @@ pub fn write_audio_to_file(
         .expect("Failed to create valid path")
         .to_string();
     let file_path_clone = file_path.clone();
-    
+
     // Run encoding in a separate task
     if !skip_encoding {
         // Convert f32 samples to bytes
-        let audio_bytes: Vec<u8> = audio.iter()
+        let audio_bytes: Vec<u8> = audio
+            .iter()
             .flat_map(|&sample| {
                 // Convert f32 to i16 and then to bytes
                 let i16_sample = (sample * i16::MAX as f32) as i16;
                 i16_sample.to_le_bytes()
             })
             .collect();
-            
+
         encode_single_audio(
             &audio_bytes,
-            16000,  // Force 16kHz sample rate
-            1,      // Force mono
+            16000, // Force 16kHz sample rate
+            1,     // Force mono
             &file_path.into(),
         )?;
     }

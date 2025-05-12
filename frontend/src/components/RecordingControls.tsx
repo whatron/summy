@@ -3,7 +3,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { appDataDir } from '@tauri-apps/api/path';
 import { useCallback, useEffect, useState, useRef } from 'react';
-import { Play, Pause, Square, Mic } from 'lucide-react';
+import { Play, Pause, Square, Mic, FileText } from 'lucide-react';
 import { ProcessRequest, SummaryResponse } from '../types/summary';
 import { listen } from '@tauri-apps/api/event';
 
@@ -14,6 +14,8 @@ interface RecordingControlsProps {
   onRecordingStop: () => void;
   onRecordingStart: () => void;
   onTranscriptReceived: (transcript: string) => void;
+  onSummaryReceived?: (summary: SummaryResponse) => void;
+  currentTranscript?: string;
 }
 
 export const RecordingControls: React.FC<RecordingControlsProps> = ({
@@ -23,6 +25,8 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   onRecordingStop,
   onRecordingStart,
   onTranscriptReceived,
+  onSummaryReceived,
+  currentTranscript,
 }) => {
   const [showPlayback, setShowPlayback] = useState(false);
   const [recordingPath, setRecordingPath] = useState<string | null>(null);
@@ -193,13 +197,62 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     };
   }, []);
 
+  const handleGenerateSummary = useCallback(async () => {
+    if (!currentTranscript) {
+      alert('No transcript available to summarize');
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      const request: ProcessRequest = {
+        transcript: currentTranscript,
+        metadata: {
+          date: new Date().toISOString(),
+          context: {
+            meeting_type: 'one_on_one',
+            priority: 'medium'
+          }
+        },
+        options: {
+          include_sentiment: true,
+          include_confidence_score: true,
+          format: 'both'
+        }
+      };
+
+      const response = await fetch('http://localhost:8178/summarize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(request)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Summary generation failed: ${response.statusText}`);
+      }
+
+      const summaryResponse: SummaryResponse = await response.json();
+      if (onSummaryReceived) {
+        onSummaryReceived(summaryResponse);
+      }
+    } catch (error) {
+      console.error('Failed to generate summary:', error);
+      alert('Failed to generate summary. Check console for details.');
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [currentTranscript, onSummaryReceived]);
+
   return (
     <div className="flex flex-col space-y-2">
       <div className="flex items-center space-x-2 bg-white rounded-full shadow-lg px-4 py-2">
         {isProcessing ? (
           <div className="flex items-center space-x-2">
             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-900"></div>
-            <span className="text-sm text-gray-600">Processing recording...</span>
+            <span className="text-sm text-gray-600">Processing...</span>
           </div>
         ) : (
           <>
@@ -276,6 +329,21 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                     />
                   ))}
                 </div>
+
+                <div className="w-px h-6 bg-gray-200 mx-1" />
+
+                <button
+                  onClick={handleGenerateSummary}
+                  disabled={!currentTranscript || isProcessing}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-colors ${
+                    !currentTranscript || isProcessing
+                      ? 'bg-gray-300 cursor-not-allowed'
+                      : 'bg-blue-500 hover:bg-blue-600 cursor-pointer'
+                  } text-white`}
+                  title="Generate Summary"
+                >
+                  <FileText size={16} />
+                </button>
               </>
             )}
           </>
