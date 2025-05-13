@@ -5,7 +5,7 @@ import { writeTextFile } from '@tauri-apps/plugin-fs';
 import { RecordingControls } from "./components/RecordingControls";
 import { SummaryResponse } from "./types/summary";
 import ReactMarkdown from 'react-markdown';
-import { Download, ChevronDown, FileText, FileCode, Play } from 'lucide-react';
+import { Download, ChevronDown, FileText, FileCode, Play, Edit2, Save } from 'lucide-react';
 
 function App() {
   const [isRecording, setIsRecording] = useState(false);
@@ -13,6 +13,8 @@ function App() {
   const [barHeights, setBarHeights] = useState(['58%', '76%', '58%']);
   const [error, setError] = useState<string>('');
   const [transcript, setTranscript] = useState<string>('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedTranscript, setEditedTranscript] = useState('');
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const transcriptBoxRef = useRef<HTMLDivElement>(null);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
@@ -179,10 +181,6 @@ function App() {
       sections.push('## Key Definitions\n' + summary.summary.key_definitions.map(def => `- ${def}`).join('\n'));
     }
 
-    if (summary.summary.important_formulas?.length > 0) {
-      sections.push('## Important Formulas\n' + summary.summary.important_formulas.map(formula => `- ${formula}`).join('\n'));
-    }
-
     if (summary.summary.examples?.length > 0) {
       sections.push('## Examples\n' + summary.summary.examples.map(example => `- ${example}`).join('\n'));
     }
@@ -261,17 +259,59 @@ function App() {
   const handleSendDummyTranscript = async () => {
     try {
       setIsSendingDummy(true);
-      const dummyTranscript = `Today we'll be discussing the fascinating world of quantum mechanics. Let's start with the fundamental principles that govern the behavior of particles at the quantum level.
+      const dummyTranscript = `Today we'll be exploring the fascinating world of quantum computing, a revolutionary field that's poised to transform how we process information. Let's begin with the fundamental principles that make quantum computing possible.
 
-The first key concept is wave-particle duality, which states that particles can exhibit both wave-like and particle-like properties. This was first demonstrated in the famous double-slit experiment, where electrons showed interference patterns similar to waves.
+The first key concept we need to understand is quantum superposition. Unlike classical bits that can only be 0 or 1, quantum bits, or qubits, can exist in multiple states simultaneously. This is mathematically described by the wave function ψ(x,t) = Ae^(i(kx-ωt)), which gives us the probability amplitude of finding a particle in a particular state.
 
-The Heisenberg Uncertainty Principle is another crucial concept. It tells us that we cannot simultaneously know both the position and momentum of a particle with perfect precision. This is mathematically expressed as ΔxΔp ≥ ħ/2, where ħ is the reduced Planck constant.
+Quantum entanglement is another crucial concept. When two or more particles become entangled, their quantum states become correlated, regardless of the distance between them. Einstein famously called this "spooky action at a distance." This phenomenon is essential for quantum teleportation and quantum cryptography.
 
-Quantum superposition is the ability of quantum systems to exist in multiple states simultaneously. This is described by the wave function ψ(x,t) = Ae^(i(kx-ωt)), which gives us the probability amplitude of finding a particle at a particular position and time.
+Let's look at some practical examples. The double-slit experiment demonstrates quantum superposition, where particles create an interference pattern on a screen. Quantum tunneling is another example, where particles can pass through potential barriers that would be impossible to overcome in classical physics.
 
-Let's look at some practical examples. The double-slit experiment demonstrates wave-particle duality, where electrons create an interference pattern on a screen. Quantum tunneling is another example, where particles can pass through potential barriers that would be impossible to overcome in classical physics.
+The quantum circuit model is the most common way to describe quantum computations. A quantum circuit consists of quantum gates that manipulate qubits. The Hadamard gate, for instance, creates superposition, while the CNOT gate creates entanglement between qubits.
 
-To understand these concepts, you'll need a basic understanding of classical mechanics, familiarity with wave phenomena, and knowledge of differential equations. The key learning objectives for this lecture are to understand the fundamental principles of quantum mechanics, apply quantum concepts to solve basic problems, and recognize quantum effects in real-world applications.`;
+Quantum error correction is a critical challenge in quantum computing. Due to decoherence and other quantum effects, qubits are highly susceptible to errors. We use quantum error-correcting codes, such as the surface code, to protect quantum information from these errors.
+
+Let's discuss some real-world applications. Quantum computing shows promise in:
+1. Cryptography - Breaking current encryption methods and creating new quantum-resistant ones
+2. Drug discovery - Simulating molecular interactions with unprecedented accuracy
+3. Optimization problems - Solving complex logistics and scheduling problems
+4. Machine learning - Accelerating certain types of neural network training
+
+The quantum-classical boundary is an important concept to understand. While quantum computers can solve certain problems exponentially faster than classical computers, they're not universally better. Problems like integer factorization and database search show quantum speedup, while others don't benefit from quantum algorithms.
+
+To understand these concepts, you'll need:
+- Basic understanding of linear algebra
+- Familiarity with quantum mechanics principles
+- Knowledge of classical computing fundamentals
+- Understanding of probability theory
+
+The key learning objectives for this lecture are:
+1. Understand the fundamental principles of quantum computing
+2. Recognize the differences between classical and quantum computing
+3. Identify problems that can benefit from quantum algorithms
+4. Understand the current limitations and challenges in quantum computing
+5. Appreciate the potential impact of quantum computing on various fields
+
+Let's look at some important formulas:
+- Schrödinger equation: iℏ∂ψ/∂t = Ĥψ
+- Quantum state vector: |ψ⟩ = α|0⟩ + β|1⟩
+- Quantum gate matrix: U = [a b; c d]
+- Quantum measurement probability: P(x) = |⟨x|ψ⟩|²
+
+The field of quantum computing is rapidly evolving, with major companies like IBM, Google, and Microsoft investing heavily in research and development. IBM's 433-qubit Osprey processor and Google's quantum supremacy experiment are significant milestones in this journey.
+
+In conclusion, quantum computing represents a paradigm shift in how we process information. While we're still in the early stages of development, the potential applications are vast and transformative. The next decade will likely see significant advances in quantum hardware, algorithms, and applications.
+
+Remember that quantum computing is not just about faster computation - it's about solving problems that are currently intractable with classical computers. This includes simulating quantum systems, optimizing complex networks, and breaking current cryptographic systems.
+
+The future of quantum computing is bright, but there are still many challenges to overcome. These include:
+1. Maintaining quantum coherence
+2. Scaling up the number of qubits
+3. Reducing error rates
+4. Developing new quantum algorithms
+5. Creating a quantum programming ecosystem
+
+As we continue to make progress in this field, we'll need to address these challenges while exploring new applications and use cases. The quantum computing revolution is just beginning, and it's an exciting time to be involved in this field.`;
 
       // Set the transcript
       replaceTranscript(dummyTranscript);
@@ -314,6 +354,20 @@ To understand these concepts, you'll need a basic understanding of classical mec
     }
   };
 
+  const handleEditClick = () => {
+    setEditedTranscript(transcript);
+    setIsEditing(true);
+  };
+
+  const handleSaveClick = () => {
+    setTranscript(editedTranscript);
+    setIsEditing(false);
+  };
+
+  const handleCancelClick = () => {
+    setIsEditing(false);
+  };
+
   return (
     <main className="container">
       {/* Fixed transcript box */}
@@ -324,20 +378,58 @@ To understand these concepts, you'll need a basic understanding of classical mec
         >
           <div className="flex justify-between items-center mb-2 sticky top-0 bg-white pb-2 border-b border-gray-200">
             <h2 className="text-lg font-semibold text-gray-800">Transcript</h2>
-            <button
-              onClick={handleSendDummyTranscript}
-              disabled={isSendingDummy}
-              className={`flex items-center space-x-1 px-3 py-1 text-sm rounded-md transition-colors ${
-                isSendingDummy
-                  ? 'bg-gray-300 cursor-not-allowed'
-                  : 'bg-blue-500 hover:bg-blue-600 text-white'
-              }`}
-            >
-              <Play size={16} />
-              <span>{isSendingDummy ? 'Sending...' : 'Send Dummy Lecture'}</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              {isEditing ? (
+                <>
+                  <button
+                    onClick={handleSaveClick}
+                    className="flex items-center space-x-1 px-3 py-1 text-sm rounded-md bg-green-500 hover:bg-green-600 text-white transition-colors"
+                  >
+                    <Save size={16} />
+                    <span>Save</span>
+                  </button>
+                  <button
+                    onClick={handleCancelClick}
+                    className="flex items-center space-x-1 px-3 py-1 text-sm rounded-md bg-gray-500 hover:bg-gray-600 text-white transition-colors"
+                  >
+                    <span>Cancel</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={handleEditClick}
+                    className="flex items-center space-x-1 px-3 py-1 text-sm rounded-md bg-blue-500 hover:bg-blue-600 text-white transition-colors"
+                  >
+                    <Edit2 size={16} />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    onClick={handleSendDummyTranscript}
+                    disabled={isSendingDummy}
+                    className={`flex items-center space-x-1 px-3 py-1 text-sm rounded-md transition-colors ${
+                      isSendingDummy
+                        ? 'bg-gray-300 cursor-not-allowed'
+                        : 'bg-blue-500 hover:bg-blue-600 text-white'
+                    }`}
+                  >
+                    <Play size={16} />
+                    <span>{isSendingDummy ? 'Sending...' : 'Send Dummy Lecture'}</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
-          <p className="text-gray-600 whitespace-pre-wrap">{transcript || 'No transcript yet...'}</p>
+          {isEditing ? (
+            <textarea
+              value={editedTranscript}
+              onChange={(e) => setEditedTranscript(e.target.value)}
+              className="w-full h-[calc(100%-3rem)] p-2 text-gray-600 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Edit your transcript here..."
+            />
+          ) : (
+            <p className="text-gray-600 whitespace-pre-wrap">{transcript || 'No transcript yet...'}</p>
+          )}
         </div>
       </div>
 
