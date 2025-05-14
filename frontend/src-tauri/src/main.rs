@@ -1,5 +1,5 @@
-use env_logger;
 use log;
+use env_logger;
 
 fn main() {
     std::env::set_var("RUST_LOG", "info");

@@ -1,8 +1,8 @@
 use super::AudioDevice;
-use hound::{WavSpec, WavWriter};
 use std::path::PathBuf;
+use hound::{WavWriter, WavSpec};
+use tracing::{debug};
 use std::sync::Arc;
-use tracing::debug;
 
 pub struct AudioInput {
     pub data: Arc<Vec<f32>>,
@@ -20,8 +20,7 @@ pub fn encode_single_audio(
     debug!("Starting WAV file encoding");
 
     // Convert bytes to i16 samples
-    let samples: Vec<i16> = data
-        .chunks(2)
+    let samples: Vec<i16> = data.chunks(2)
         .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
         .collect();
 

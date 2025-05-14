@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "meeting-minutes-frontend",
   "version": "0.1.0",
-  "identifier": "com.summy.ai",
+  "identifier": "com.meetily.ai",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:1420",
@@ -13,12 +13,12 @@
   "app": {
     "windows": [
       {
-        "title": "summy",
+        "title": "meetily",
         "width": 1200,
         "height": 800,
         "resizable": true,
         "fullscreen": false,
-        "theme": "Dark",
+        "theme": "Light",
         "decorations": true
       }
     ],
@@ -50,7 +50,6 @@
             "fs:allow-download-write",
             "fs:allow-download-read",
             "fs:scope-download",
-            "dialog:default",
             "core:path:default",
             "core:event:default",
             "core:window:default",
