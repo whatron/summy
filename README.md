@@ -28,9 +28,9 @@ A modern audio summarization application built with Tauri, React, and Python.
 
 4. Run the backend server:
    ```bash
-   ./setup.sh
+   python app.py
    ```
-   This will start the Flask server on port 5000.
+   This will start the Flask server.
 
 ## Frontend Setup
 
@@ -52,7 +52,7 @@ A modern audio summarization application built with Tauri, React, and Python.
 
 ## Development
 
-- The backend server runs on `http://localhost:5000`
+- The backend server runs on `http://localhost:8178`
 - The frontend development server will open automatically through Tauri
 - Any changes to the frontend code will automatically reload the application
 - Backend changes require a server restart
