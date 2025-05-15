@@ -14,6 +14,7 @@ Please ensure these are present
 - Python (v3.8 or higher)
 - Rust (for Tauri)
 - Xcode (full version) (for Tauri)
+- cmake
 
 ## Backend Setup
 
