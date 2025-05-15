@@ -1,6 +1,11 @@
 # Summy - Audio Summarizer
 
-A modern audio summarization application built with Tauri, React, and Python.
+
+A local-first, real-time audio transcription and summarization app built with Tauri, React, and Python.
+
+## Overview
+
+Summy is a local, privacy-respecting tool for real-time audio transcription and summarization. It captures audio from system and microphone inputs, transcribes it using a locally running Whisper model, and generates concise summaries using modern NLP models like BART or T5. Designed for lecture notes, meetings, and personal recordings, Summy operates fully offline to ensure user data privacy.
 
 ## Prerequisites
 
@@ -71,5 +76,5 @@ If you encounter any issues:
 
 1. Make sure all prerequisites are installed
 2. Ensure the backend server is running before starting the frontend
-3. Check that ports 5000 is not being used by other applications
+3. Check that ports 8178 is not being used by other applications
 4. For backend issues, check the Python virtual environment is activated
