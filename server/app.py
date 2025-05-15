@@ -8,9 +8,21 @@ from datetime import datetime
 import glob
 import time
 from scipy import signal
+import logging
+import sys
 
 app = Flask(__name__)
 CORS(app)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Constants
 WHISPER_SAMPLE_RATE = 16000  # 16kHz sample rate
@@ -69,7 +81,6 @@ def save_audio_as_wav(audio_data, sample_rate, filename):
 
 @app.route('/stream', methods=['POST'])
 def handle_audio():
-    # Get the audio file from the request
     audio_file = request.files.get('audio')
     
     if audio_file:
@@ -82,28 +93,20 @@ def handle_audio():
             # Read the raw audio data
             raw_data = audio_file.read()
             
-            # Convert raw bytes to numpy array of float32 samples
+            # First interpret as float32 bytes (4 bytes per sample)
             audio_array = np.frombuffer(raw_data, dtype=np.float32)
             
-            # Normalize the audio if needed
-            if np.max(np.abs(audio_array)) > 1.0:
-                audio_array = audio_array / np.max(np.abs(audio_array))
+            # Calculate expected duration based on sample rate and number of samples
+            expected_duration = len(audio_array) / WHISPER_SAMPLE_RATE
+            print(f"Expected audio duration: {expected_duration:.3f}s ({len(audio_array)} samples at {WHISPER_SAMPLE_RATE}Hz)")
             
+            # Debug info
+            print(f"Raw audio stats - Min: {np.min(audio_array):.3f}, Max: {np.max(audio_array):.3f}, Mean: {np.mean(audio_array):.3f}")
+            print(f"Sample count: {len(audio_array)}")
             
-            # Save as WAV with proper headers
+            # Save as WAV for debugging
             save_audio_as_wav(audio_array, WHISPER_SAMPLE_RATE, filepath)
-            
-            print(f"Saved audio to: {filepath}")
-            print(f"Audio stats - Min: {np.min(audio_array):.3f}, Max: {np.max(audio_array):.3f}, Mean: {np.mean(audio_array):.3f}")
-            
-            # Debug: Check file size and content
-            file_size = os.path.getsize(filepath)
-            print(f"File size: {file_size} bytes")
-            
-            # Calculate chunk duration in milliseconds
-            num_samples = len(audio_array)
-            chunk_duration_ms = (num_samples / WHISPER_SAMPLE_RATE) * 1000
-            print(f"Final audio duration: {chunk_duration_ms/1000:.3f}s")
+            print(f"Saved debug audio to: {filepath}")
             
             # Initialize the pipeline with better chunk handling
             pipe = pipeline(
@@ -112,31 +115,31 @@ def handle_audio():
                 torch_dtype=torch.float16,
                 device="mps:0" if torch.backends.mps.is_available() else "cpu",
                 chunk_length_s=30,
-                stride_length_s=5,  # Add stride to prevent overlap
+                stride_length_s=5,
                 batch_size=16,
                 return_timestamps=True
             )
 
-            # Process the audio with better chunk handling
+            # Process the audio with explicit sample rate
             outputs = pipe(
-                audio_array,
+                {"array": audio_array, "sampling_rate": WHISPER_SAMPLE_RATE},
                 chunk_length_s=30,
-                stride_length_s=5,  # Add stride to prevent overlap
+                stride_length_s=5,
                 batch_size=16,
                 return_timestamps=True
             )
             
             print("Transcription output:", outputs)
-            print(f"Processed {num_samples} samples ({chunk_duration_ms:.2f}ms of audio)")
+            print(f"Processed {len(audio_array)} samples ({expected_duration:.3f}s of audio)")
             
             # Format the response according to the frontend's expected structure
             segments = []
             if isinstance(outputs, dict) and 'chunks' in outputs:
                 # Handle chunked output
                 for chunk in outputs['chunks']:
-                    # Ensure t1 is a valid float, use chunk_duration_ms if None
+                    # Ensure t1 is a valid float, use expected_duration if None
                     t0 = chunk['timestamp'][0] if isinstance(chunk['timestamp'], tuple) else 0.0
-                    t1 = chunk['timestamp'][1] if isinstance(chunk['timestamp'], tuple) and chunk['timestamp'][1] is not None else chunk_duration_ms / 1000.0
+                    t1 = chunk['timestamp'][1] if isinstance(chunk['timestamp'], tuple) and chunk['timestamp'][1] is not None else expected_duration
                     
                     # Only add non-empty segments
                     if chunk['text'].strip():
@@ -152,7 +155,7 @@ def handle_audio():
                     segments.append({
                         "text": text.strip(),
                         "t0": 0.0,
-                        "t1": chunk_duration_ms / 1000.0
+                        "t1": expected_duration
                     })
             
             # Clean up old audio files
@@ -161,8 +164,8 @@ def handle_audio():
             # Return the transcription in the expected format
             return jsonify({
                 "segments": segments,
-                "buffer_size_ms": int(chunk_duration_ms),
-                "audio_file": filename  # Return the filename to the frontend
+                "duration": expected_duration,
+                "audio_file": filename
             })
         except Exception as e:
             print(f"Error processing audio: {str(e)}")
@@ -284,26 +287,35 @@ def process_wav():
 def summarize():
     """Generate a summary from the transcript using T5-small"""
     try:
+        start_time = time.time()
         data = request.get_json()
         transcript = data.get('transcript', '')
         
+        logger.info("Received transcript for summarization")
+        logger.debug(f"Transcript length: {len(transcript)} characters")
+        
         if not transcript:
+            logger.error("No transcript provided")
             return jsonify({"error": "No transcript provided"}), 400
 
         # Initialize T5 pipeline
+        logger.info("Initializing T5 summarization pipeline")
         summarizer = pipeline(
             "summarization",
-            model="t5-small",
+            model="facebook/bart-large-cnn",
             device="mps:0" if torch.backends.mps.is_available() else "cpu"
         )
+        logger.info(f"Using device: {'mps:0' if torch.backends.mps.is_available() else 'cpu'}")
 
         # Split transcript into chunks if it's too long (T5 has a max input length)
         max_chunk_length = 512
         chunks = [transcript[i:i + max_chunk_length] for i in range(0, len(transcript), max_chunk_length)]
+        logger.info(f"Split transcript into {len(chunks)} chunks")
         
         # Process each chunk
         summaries = []
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks, 1):
+            logger.info(f"Processing chunk {i}/{len(chunks)}")
             # Calculate appropriate max_length based on input length
             input_length = len(chunk.split())
             max_length = min(max(input_length // 2, 30), 100)  # Between 30 and 100 tokens
@@ -315,53 +327,28 @@ def summarize():
                                min_length=min_length, 
                                do_sample=False)
             summaries.append(summary[0]['summary_text'])
+            logger.debug(f"Chunk {i} summary length: {len(summary[0]['summary_text'])} characters")
 
         # Combine summaries
         combined_summary = " ".join(summaries)
+        logger.info(f"Generated combined summary of length: {len(combined_summary)} characters")
 
-        # Extract key information using T5 for specific aspects
-        def extract_aspect(text, aspect_prompt):
-            input_length = len(text.split())
-            max_length = min(max(input_length // 3, 20), 50)  # Shorter for aspect extraction
-            min_length = max(input_length // 6, 10)  # Even shorter for aspect extraction
-            
-            prompt = f"{aspect_prompt}: {text}"
-            result = summarizer(prompt, 
-                              max_length=max_length, 
-                              min_length=min_length, 
-                              do_sample=False)
-            return result[0]['summary_text'].split(", ")
+        # Calculate actual processing time
+        processing_time = time.time() - start_time
+        logger.info(f"Total processing time: {processing_time:.2f} seconds")
 
-        # Generate structured summary
+        # Generate response with actual processing time
         summary = {
-            "summary": {
-                "main_concepts": extract_aspect(combined_summary, "Extract main concepts"),
-                "key_definitions": extract_aspect(combined_summary, "Extract key definitions"),
-                "important_formulas": extract_aspect(combined_summary, "Extract important formulas"),
-                "examples": extract_aspect(combined_summary, "Extract examples"),
-                "learning_objectives": extract_aspect(combined_summary, "Extract learning objectives"),
-                "prerequisites": extract_aspect(combined_summary, "Extract prerequisites"),
-                "sentiment": "informative",  # Could be enhanced with sentiment analysis
-                "confidence_score": 0.85,  # Could be enhanced with confidence scoring
-                "difficulty_level": "intermediate"  # Could be enhanced with difficulty analysis
-            },
+            "summary": combined_summary,
             "transcript_id": f"lecture_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-            "processing_time": 1.5,
-            "lecture_metadata": {
-                "subject": "General",  # Could be enhanced with subject detection
-                "topic": "Lecture",    # Could be enhanced with topic detection
-                "level": "General",    # Could be enhanced with level detection
-                "estimated_duration": "60 minutes"  # Could be enhanced with duration estimation
-            }
+            "processing_time": round(processing_time, 2),  # Round to 2 decimal places
         }
         
         return jsonify(summary)
-        
     except Exception as e:
-        print(f"Error generating summary: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
-        return jsonify({"error": f"Failed to generate summary: {str(e)}"}), 500
+        logger.error(f"Error in summarization: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=8178, debug=True) 
+if __name__ == "__main__":
+    logger.info("Starting Flask server")
+    app.run(host='0.0.0.0', port=8178, debug=True) 

@@ -20,6 +20,7 @@ function App() {
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const downloadMenuRef = useRef<HTMLDivElement>(null);
   const [isSendingDummy, setIsSendingDummy] = useState(false);
+  const [isSendingBadTranscript, setIsSendingBadTranscript] = useState(false);
 
   useEffect(() => {
     if (isRecording) {
@@ -113,23 +114,23 @@ function App() {
       });
       formData.append('audio', audioFile, `recording-${timestamp}.wav`);
 
-      const response = await fetch('http://localhost:8178/process_wav', {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Accept': 'application/json'
-        }
-      });
+      // const response = await fetch('http://localhost:8178/process_wav', {
+      //   method: 'POST',
+      //   body: formData,
+      //   headers: {
+      //     'Accept': 'application/json'
+      //   }
+      // });
 
-      if (!response.ok) {
-        throw new Error(`Server returned ${response.status}: ${await response.text()}`);
-      }
+      // if (!response.ok) {
+      //   throw new Error(`Server returned ${response.status}: ${await response.text()}`);
+      // }
 
-      const data = await response.json();
-      if (data.segments && data.segments.length > 0) {
-        const transcript = data.segments.map((s: any) => s.text).join(' ');
-        replaceTranscript(transcript);
-      }
+      // const data = await response.json();
+      // if (data.segments && data.segments.length > 0) {
+      //   const transcript = data.segments.map((s: any) => s.text).join(' ');
+      //   replaceTranscript(transcript);
+      // }
     } catch (error) {
       console.error('Failed to stop recording:', error);
       if (error instanceof Error) {
@@ -163,42 +164,8 @@ function App() {
   const formatSummaryAsMarkdown = (summary: SummaryResponse) => {
     const sections = [];
 
-    // Add lecture metadata
-    if (summary.lecture_metadata) {
-      sections.push('## Lecture Information\n' +
-        `- Subject: ${summary.lecture_metadata.subject}\n` +
-        `- Topic: ${summary.lecture_metadata.topic}\n` +
-        `- Level: ${summary.lecture_metadata.level}\n` +
-        `- Duration: ${summary.lecture_metadata.estimated_duration}`
-      );
-    }
-
-    if (summary.summary.main_concepts?.length > 0) {
-      sections.push('## Main Concepts\n' + summary.summary.main_concepts.map(concept => `- ${concept}`).join('\n'));
-    }
-
-    if (summary.summary.key_definitions?.length > 0) {
-      sections.push('## Key Definitions\n' + summary.summary.key_definitions.map(def => `- ${def}`).join('\n'));
-    }
-
-    if (summary.summary.examples?.length > 0) {
-      sections.push('## Examples\n' + summary.summary.examples.map(example => `- ${example}`).join('\n'));
-    }
-
-    if (summary.summary.learning_objectives?.length > 0) {
-      sections.push('## Learning Objectives\n' + summary.summary.learning_objectives.map(objective => `- ${objective}`).join('\n'));
-    }
-
-    if (summary.summary.prerequisites?.length > 0) {
-      sections.push('## Prerequisites\n' + summary.summary.prerequisites.map(prereq => `- ${prereq}`).join('\n'));
-    }
-
-    // Add difficulty and confidence information
-    sections.push('## Additional Information\n' +
-      `- Difficulty Level: ${summary.summary.difficulty_level}\n` +
-      `- Confidence Score: ${(summary.summary.confidence_score * 100).toFixed(1)}%\n` +
-      `- Sentiment: ${summary.summary.sentiment}`
-    );
+    // Add the summary text
+    sections.push('## Summary\n' + summary.summary);
 
     return sections.join('\n\n');
   };
@@ -259,59 +226,19 @@ function App() {
   const handleSendDummyTranscript = async () => {
     try {
       setIsSendingDummy(true);
-      const dummyTranscript = `Today we'll be exploring the fascinating world of quantum computing, a revolutionary field that's poised to transform how we process information. Let's begin with the fundamental principles that make quantum computing possible.
+      const dummyTranscript = `Today we'll be exploring the fascinating world of quantum computing, a revolutionary field that's poised to transform how we process information. Let's begin with the fundamental principles that make quantum computing possible. The first key concept we need to understand is quantum superposition. Unlike classical bits that can only be 0 or 1, quantum bits, or qubits, can exist in multiple states simultaneously. This is mathematically described by the wave function ψ(x,t) = Ae^(i(kx-ωt)), which gives us the probability amplitude of finding a particle in a particular state.
 
-The first key concept we need to understand is quantum superposition. Unlike classical bits that can only be 0 or 1, quantum bits, or qubits, can exist in multiple states simultaneously. This is mathematically described by the wave function ψ(x,t) = Ae^(i(kx-ωt)), which gives us the probability amplitude of finding a particle in a particular state.
+Quantum entanglement is another crucial concept. When two or more particles become entangled, their quantum states become correlated, regardless of the distance between them. Einstein famously called this "spooky action at a distance." This phenomenon is essential for quantum teleportation and quantum cryptography. The double-slit experiment demonstrates quantum superposition, where particles create an interference pattern on a screen. Quantum tunneling is another example, where particles can pass through potential barriers that would be impossible to overcome in classical physics.
 
-Quantum entanglement is another crucial concept. When two or more particles become entangled, their quantum states become correlated, regardless of the distance between them. Einstein famously called this "spooky action at a distance." This phenomenon is essential for quantum teleportation and quantum cryptography.
+The quantum circuit model is the most common way to describe quantum computations. A quantum circuit consists of quantum gates that manipulate qubits. The Hadamard gate creates superposition, while the CNOT gate creates entanglement between qubits. Quantum error correction is a critical challenge in quantum computing. Due to decoherence and other quantum effects, qubits are highly susceptible to errors. We use quantum error-correcting codes, such as the surface code, to protect quantum information from these errors.
 
-Let's look at some practical examples. The double-slit experiment demonstrates quantum superposition, where particles create an interference pattern on a screen. Quantum tunneling is another example, where particles can pass through potential barriers that would be impossible to overcome in classical physics.
+In terms of real-world applications, quantum computing shows great promise in several areas. In cryptography, it could break current encryption methods and create new quantum-resistant ones. For drug discovery, it enables simulating molecular interactions with unprecedented accuracy. In optimization, it can solve complex logistics and scheduling problems. And in machine learning, it can accelerate certain types of neural network training.
 
-The quantum circuit model is the most common way to describe quantum computations. A quantum circuit consists of quantum gates that manipulate qubits. The Hadamard gate, for instance, creates superposition, while the CNOT gate creates entanglement between qubits.
+The quantum-classical boundary is an important concept to understand. While quantum computers can solve certain problems exponentially faster than classical computers, they're not universally better. Problems like integer factorization and database search show quantum speedup, while others don't benefit from quantum algorithms. To work in this field, you'll need a basic understanding of linear algebra, familiarity with quantum mechanics principles, knowledge of classical computing fundamentals, and an understanding of probability theory.
 
-Quantum error correction is a critical challenge in quantum computing. Due to decoherence and other quantum effects, qubits are highly susceptible to errors. We use quantum error-correcting codes, such as the surface code, to protect quantum information from these errors.
+The field of quantum computing is rapidly evolving, with major companies like IBM, Google, and Microsoft investing heavily in research and development. IBM's 433-qubit Osprey processor and Google's quantum supremacy experiment are significant milestones in this journey. Looking ahead, we face several key challenges: maintaining quantum coherence, scaling up the number of qubits, reducing error rates, developing new quantum algorithms, and creating a quantum programming ecosystem.
 
-Let's discuss some real-world applications. Quantum computing shows promise in:
-1. Cryptography - Breaking current encryption methods and creating new quantum-resistant ones
-2. Drug discovery - Simulating molecular interactions with unprecedented accuracy
-3. Optimization problems - Solving complex logistics and scheduling problems
-4. Machine learning - Accelerating certain types of neural network training
-
-The quantum-classical boundary is an important concept to understand. While quantum computers can solve certain problems exponentially faster than classical computers, they're not universally better. Problems like integer factorization and database search show quantum speedup, while others don't benefit from quantum algorithms.
-
-To understand these concepts, you'll need:
-- Basic understanding of linear algebra
-- Familiarity with quantum mechanics principles
-- Knowledge of classical computing fundamentals
-- Understanding of probability theory
-
-The key learning objectives for this lecture are:
-1. Understand the fundamental principles of quantum computing
-2. Recognize the differences between classical and quantum computing
-3. Identify problems that can benefit from quantum algorithms
-4. Understand the current limitations and challenges in quantum computing
-5. Appreciate the potential impact of quantum computing on various fields
-
-Let's look at some important formulas:
-- Schrödinger equation: iℏ∂ψ/∂t = Ĥψ
-- Quantum state vector: |ψ⟩ = α|0⟩ + β|1⟩
-- Quantum gate matrix: U = [a b; c d]
-- Quantum measurement probability: P(x) = |⟨x|ψ⟩|²
-
-The field of quantum computing is rapidly evolving, with major companies like IBM, Google, and Microsoft investing heavily in research and development. IBM's 433-qubit Osprey processor and Google's quantum supremacy experiment are significant milestones in this journey.
-
-In conclusion, quantum computing represents a paradigm shift in how we process information. While we're still in the early stages of development, the potential applications are vast and transformative. The next decade will likely see significant advances in quantum hardware, algorithms, and applications.
-
-Remember that quantum computing is not just about faster computation - it's about solving problems that are currently intractable with classical computers. This includes simulating quantum systems, optimizing complex networks, and breaking current cryptographic systems.
-
-The future of quantum computing is bright, but there are still many challenges to overcome. These include:
-1. Maintaining quantum coherence
-2. Scaling up the number of qubits
-3. Reducing error rates
-4. Developing new quantum algorithms
-5. Creating a quantum programming ecosystem
-
-As we continue to make progress in this field, we'll need to address these challenges while exploring new applications and use cases. The quantum computing revolution is just beginning, and it's an exciting time to be involved in this field.`;
+In conclusion, quantum computing represents a paradigm shift in how we process information. While we're still in the early stages of development, the potential applications are vast and transformative. The next decade will likely see significant advances in quantum hardware, algorithms, and applications. Remember that quantum computing is not just about faster computation - it's about solving problems that are currently intractable with classical computers. This includes simulating quantum systems, optimizing complex networks, and breaking current cryptographic systems. As we continue to make progress in this field, we'll need to address these challenges while exploring new applications and use cases. The quantum computing revolution is just beginning, and it's an exciting time to be involved in this field.`;
 
       // Set the transcript
       replaceTranscript(dummyTranscript);
@@ -351,6 +278,60 @@ As we continue to make progress in this field, we'll need to address these chall
       alert('Failed to send dummy transcript. Check console for details.');
     } finally {
       setIsSendingDummy(false);
+    }
+  };
+
+  const handleSendBadTranscript = async () => {
+    try {
+      setIsSendingBadTranscript(true);
+      const badTranscript = `Hay their! Lets tawk about quantim computing and its impakt on the wurld. The furst key consept we knead two understand is quantum supperposition. Unlike clasical bits that can only be zero or won, quantum bits (or q-bits) can exist in multyple states simultainiously. This is mathmaticaly described by the weigh function psi of x and t equals A times e to the eye times k x minus omega t, witch gives us the probibility amplitood of finding a particle in a perticular state.
+
+Quantum entanglemint is another crushal concept. Wen too or more particles become intangled, there quantum states become corelated, regardles of the distance between them. Einstein famusly called this "spookey action at a distance." This phenominon is essential four quantum tellyportation and quantum cryptografy. The quantim circut modle is the most comon way two describe quantum computashuns. A quantum circut consists of quantum gates that manupulate qbits. The Hadamart gate creates supperposition, while the C-NOT gate creates entanglemint between qbits.
+
+In terms of reel-world applicashuns, quantum computing shows promiss in several areas. In cryptografy, it can brake current encrypshun methods. In drug discovry, it helps simulate molekular interacshuns. For optimizashun, it solves complex logistiks problems. And in machine lernin, it helps with neural network traning. The quantim-clasical boundry is an impotent concept two understand. Wile quantum computers can solve certin problems exponenshally faster than clasical computers, their not universaly better.
+
+The feeld of quantum computing is rapidly evolvin, with major companys like IBM, Googel, and Micrsoft investing heavily in reserch and developmint. Looking ahead, we face several key chalenges: maintaining quantum coherense, skaling up the number of qbits, reducing eror rates, developing new algorithims, and creating a quantum programing ekosystem.
+
+In conclushun, quantum computing represents a paradime shift in how we proces informashun. The neckst decade will likely sea significant advances in quantum hardware, algorithims, and applicashuns. Remember that quantum computing is not just about faster computashun - its about solving problems that are currently intractible with clasical computers. As we continue two make progres in this feeld, well need two address these chalenges while exploring new applicashuns and use cases. The quantum computing revolushun is just beginning, and its an exciting time two be involved in this feeld.`;
+
+      // Set the transcript
+      replaceTranscript(badTranscript);
+
+      // Send to summarization endpoint
+      const response = await fetch('http://localhost:8178/summarize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          transcript: badTranscript,
+          metadata: {
+            date: new Date().toISOString(),
+            context: {
+              meeting_type: 'lecture',
+              priority: 'high'
+            }
+          },
+          options: {
+            include_sentiment: true,
+            include_confidence_score: true,
+            format: 'both'
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${await response.text()}`);
+      }
+
+      const summaryResponse: SummaryResponse = await response.json();
+      handleSummaryReceived(summaryResponse);
+    } catch (error) {
+      console.error('Failed to send bad transcript:', error);
+      alert('Failed to send bad transcript. Check console for details.');
+    } finally {
+      setIsSendingBadTranscript(false);
     }
   };
 
@@ -415,6 +396,18 @@ As we continue to make progress in this field, we'll need to address these chall
                   >
                     <Play size={16} />
                     <span>{isSendingDummy ? 'Sending...' : 'Send Dummy Lecture'}</span>
+                  </button>
+                  <button
+                    onClick={handleSendBadTranscript}
+                    disabled={isSendingBadTranscript || !transcript}
+                    className={`flex items-center space-x-1 px-3 py-1 text-sm rounded-md transition-colors ${
+                      isSendingBadTranscript || !transcript
+                        ? 'bg-gray-300 cursor-not-allowed'
+                        : 'bg-red-500 hover:bg-red-600 text-white'
+                    }`}
+                  >
+                    <FileText size={16} />
+                    <span>{isSendingBadTranscript ? 'Sending...' : 'Send Bad Transcript'}</span>
                   </button>
                 </>
               )}

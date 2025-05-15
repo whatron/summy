@@ -159,15 +159,19 @@ async fn send_audio_chunk(
     client: &reqwest::Client,
 ) -> Result<TranscriptResponse, String> {
     log_debug!("Preparing to send audio chunk of size: {}", chunk.len());
+    
+    // Calculate expected duration
+    let expected_duration = chunk.len() as f32 / WHISPER_SAMPLE_RATE as f32;
+    log_debug!("Expected chunk duration: {:.3}s ({} samples at {}Hz)", 
+        expected_duration, chunk.len(), WHISPER_SAMPLE_RATE);
 
-    // Convert f32 samples to bytes
+    // Convert f32 samples to bytes, preserving the exact values
     let bytes: Vec<u8> = chunk
         .iter()
-        .flat_map(|&sample| {
-            let clamped = sample.max(-1.0).min(1.0);
-            clamped.to_le_bytes().to_vec()
-        })
+        .flat_map(|&sample| sample.to_le_bytes().to_vec())
         .collect();
+
+    log_debug!("Converted {} samples to {} bytes", chunk.len(), bytes.len());
 
     // Retry configuration
     let max_retries = 3;
@@ -217,7 +221,7 @@ async fn send_audio_chunk(
     }
 
     Err(format!(
-        "Failed after {} retries. Last error: {}",
+        "Failed to send audio chunk after {} retries. Last error: {}",
         max_retries, last_error
     ))
 }
@@ -344,9 +348,9 @@ async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
             }
 
             // Collect audio samples
-            let mut new_samples = Vec::new();
-            let mut mic_samples = Vec::new();
-            let mut system_samples = Vec::new();
+            let mut new_samples: Vec<f32> = Vec::new();
+            let mut mic_samples: Vec<f32> = Vec::new();
+            let mut system_samples: Vec<f32> = Vec::new();
 
             // Get microphone samples
             let mut got_mic_samples = false;
@@ -394,27 +398,42 @@ async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
                 system_receiver = system_stream.subscribe().await;
             }
 
-            // Mix samples with debug info
-            let max_len = mic_samples.len().max(system_samples.len());
-            for i in 0..max_len {
-                let mic_sample = if i < mic_samples.len() {
-                    mic_samples[i]
-                } else {
-                    0.0
-                };
-                let system_sample = if i < system_samples.len() {
-                    system_samples[i]
-                } else {
-                    0.0
-                };
-                // Increase mic sensitivity by giving it more weight in the mix (80% mic, 20% system)
-                new_samples.push((mic_sample * 0.7) + (system_sample * 0.3));
+            // Mix the audio streams at their original sample rates
+            let mic_rate = mic_stream.device_config.sample_rate().0;
+            let system_rate = system_stream.device_config.sample_rate().0;
+            
+            // Calculate relative lengths based on sample rates to maintain timing
+            let mic_len = mic_samples.len();
+            let system_len = (system_samples.len() as f32 * (mic_rate as f32 / system_rate as f32)) as usize;
+            let min_len = mic_len.min(system_len);
+            
+            let mut mixed_samples = Vec::with_capacity(min_len);
+            
+            for i in 0..min_len {
+                let mic_sample = if i < mic_samples.len() { mic_samples[i] } else { 0.0 };
+                let system_idx = (i as f32 * (system_rate as f32 / mic_rate as f32)) as usize;
+                let system_sample = if system_idx < system_samples.len() { system_samples[system_idx] } else { 0.0 };
+                // Mix with 70% mic and 30% system audio
+                mixed_samples.push((mic_sample * 0.7) + (system_sample * 0.3));
             }
 
-            log_debug!("Mixed {} samples", new_samples.len());
+            log_debug!("Mixed {} samples at {}Hz", mixed_samples.len(), mic_rate);
+
+            // Resample the mixed audio to 16kHz
+            let resampled_samples = if mic_rate != WHISPER_SAMPLE_RATE {
+                match audio::audio_processing::resample(&mixed_samples, mic_rate, WHISPER_SAMPLE_RATE) {
+                    Ok(resampled) => resampled,
+                    Err(e) => {
+                        log_error!("Failed to resample mixed audio: {}", e);
+                        continue;
+                    }
+                }
+            } else {
+                mixed_samples
+            };
 
             // Add samples to current chunk
-            for sample in new_samples {
+            for sample in resampled_samples {
                 current_chunk.push(sample);
             }
 
@@ -434,32 +453,12 @@ async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
                 let chunk_num = chunk_counter_clone.fetch_add(1, Ordering::SeqCst);
                 log_info!("Processing chunk {}", chunk_num);
 
-                // Process chunk for Whisper API
-                let whisper_samples = if sample_rate != WHISPER_SAMPLE_RATE {
-                    log_debug!(
-                        "Resampling audio from {} to {}",
-                        sample_rate,
-                        WHISPER_SAMPLE_RATE
-                    );
-                    resample_audio(&chunk_to_send, sample_rate, WHISPER_SAMPLE_RATE)
-                } else {
-                    chunk_to_send
-                };
-
                 // Send chunk for transcription
-                match send_audio_chunk(whisper_samples, &client).await {
+                match send_audio_chunk(chunk_to_send, &client).await {
                     Ok(response) => {
-                        log_info!("Received {} transcript segments", response.segments.len());
+                        // Process transcription response
                         for segment in response.segments {
-                            log_info!(
-                                "Processing segment: {} ({:.1}s - {:.1}s)",
-                                segment.text.trim(),
-                                segment.t0,
-                                segment.t1
-                            );
-                            // Add segment to accumulator and check for complete sentence
                             if let Some(update) = accumulator.add_segment(&segment) {
-                                // Emit the update
                                 if let Err(e) = app_handle.emit("transcript-update", update) {
                                     log_error!("Failed to emit transcript update: {}", e);
                                 }
@@ -467,7 +466,7 @@ async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
                         }
                     }
                     Err(e) => {
-                        log_error!("Transcription error: {}", e);
+                        log_error!("Failed to send audio chunk: {}", e);
                     }
                 }
             }
@@ -779,16 +778,12 @@ fn resample_audio(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
         return samples.to_vec();
     }
 
-    let ratio = to_rate as f32 / from_rate as f32;
-    let new_len = (samples.len() as f32 * ratio) as usize;
-    let mut resampled = Vec::with_capacity(new_len);
-
-    for i in 0..new_len {
-        let src_idx = (i as f32 / ratio) as usize;
-        if src_idx < samples.len() {
-            resampled.push(samples[src_idx]);
+    match audio::audio_processing::resample(samples, from_rate, to_rate) {
+        Ok(resampled) => resampled,
+        Err(e) => {
+            log_error!("Failed to resample audio: {}", e);
+            // Return original samples if resampling fails
+            samples.to_vec()
         }
     }
-
-    resampled
 }

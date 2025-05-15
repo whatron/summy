@@ -1,25 +1,7 @@
-export interface Summary {
-    main_concepts: string[];
-    key_definitions: string[];
-    important_formulas: string[];
-    examples: string[];
-    learning_objectives: string[];
-    prerequisites: string[];
-    difficulty_level: string;
-    confidence_score: number;
-    sentiment: string;
-}
-
-export interface LectureMetadata {
-    subject: string;
-    topic: string;
-    level: string;
-    estimated_duration: string;
-}
+export type Summary = string;
 
 export interface SummaryResponse {
     summary: Summary;
-    lecture_metadata: LectureMetadata;
     transcript_id: string;
     processing_time: number;
     error?: string;

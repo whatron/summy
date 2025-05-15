@@ -1,0 +1,83 @@
+% Project Architecture Diagram
+\documentclass{article}
+\usepackage{tikz}
+\usepackage[margin=1cm]{geometry}
+\usetikzlibrary{shapes,arrows,positioning,fit,backgrounds}
+
+\begin{document}
+
+% Define styles for different components
+\tikzstyle{component} = [draw, rectangle, rounded corners, minimum width=2cm, minimum height=1cm, text centered, text width=2.5cm]
+\tikzstyle{module} = [component, fill=blue!10]
+\tikzstyle{external} = [component, fill=red!10]
+\tikzstyle{frontend} = [component, fill=green!10]
+\tikzstyle{server} = [component, fill=yellow!10]
+\tikzstyle{flow} = [thick, ->, >=stealth]
+\tikzstyle{container} = [draw, dashed, rounded corners, inner sep=0.5cm]
+
+\begin{tikzpicture}[node distance=1.5cm]
+    % Frontend Components
+    \node[frontend] (app) {App.tsx};
+    \node[frontend, below=of app] (controls) {Recording Controls};
+    \node[frontend, right=of controls] (transcript) {Transcript Box};
+    \node[frontend, right=of transcript] (summary) {Summary Box};
+    
+    % Tauri Backend Components
+    \node[module, below=2cm of controls] (librs) {lib.rs};
+    \node[module, below left=of librs] (audio) {audio\_processing.rs};
+    \node[module, below=of librs] (stt) {stt.rs};
+    \node[module, below right=of librs] (vad) {vad\_engine.rs};
+    
+    % Audio Processing Components
+    \node[module, below left=of audio] (resample) {resample};
+    \node[module, below right=of audio] (normalize) {normalize\_v2};
+    
+    % Python Server Components
+    \node[server, below=4cm of librs] (apppy) {app.py};
+    \node[server, below left=of apppy] (whisper) {Whisper Model};
+    \node[server, below=of apppy] (t5) {T5 Model};
+    \node[server, below right=of apppy] (audio_handler) {Audio Handler};
+    
+    % External Services
+    \node[external, right=6cm of apppy] (deepgram) {Deepgram API};
+    \node[external, right=of whisper] (local_whisper) {Local Whisper};
+    
+    % Containers
+    \begin{pgfonlayer}{background}
+        \node[container, fit=(app) (controls) (transcript) (summary)] (frontend_container) {};
+        \node[text width=3cm] at (frontend_container.north west) {Frontend (React)};
+        
+        \node[container, fit=(librs) (audio) (stt) (vad) (resample) (normalize)] (tauri_container) {};
+        \node[text width=3cm] at (tauri_container.north west) {Tauri Backend (Rust)};
+        
+        \node[container, fit=(apppy) (whisper) (t5) (audio_handler)] (server_container) {};
+        \node[text width=3cm] at (server_container.north west) {Python Server};
+    \end{pgfonlayer}
+    
+    % Connections
+    \draw[flow] (app) -- (controls);
+    \draw[flow] (app) -- (transcript);
+    \draw[flow] (app) -- (summary);
+    
+    \draw[flow] (controls) -- (librs);
+    \draw[flow] (librs) -- (audio);
+    \draw[flow] (librs) -- (stt);
+    \draw[flow] (librs) -- (vad);
+    
+    \draw[flow] (audio) -- (resample);
+    \draw[flow] (audio) -- (normalize);
+    
+    \draw[flow] (librs) -- (apppy);
+    \draw[flow] (apppy) -- (whisper);
+    \draw[flow] (apppy) -- (t5);
+    \draw[flow] (apppy) -- (audio_handler);
+    
+    \draw[flow] (stt) -- (deepgram);
+    \draw[flow] (stt) -- (local_whisper);
+    
+    % Data flow labels
+    \node[text width=2cm, align=center, font=\small] at ($(librs)!0.5!(apppy)$) {Audio Chunks};
+    \node[text width=2cm, align=center, font=\small] at ($(apppy)!0.5!(app)$) {Transcripts \& Summaries};
+\end{tikzpicture}
+
+\end{document} 
