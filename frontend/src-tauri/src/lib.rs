@@ -419,9 +419,24 @@ async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
 
             log_debug!("Mixed {} samples at {}Hz", mixed_samples.len(), mic_rate);
 
+            // Normalize the mixed audio
+            let normalized_samples = audio::audio_processing::normalize_v2(&mixed_samples);
+            log_debug!("Normalized {} samples", normalized_samples.len());
+
+            // Apply spectral subtraction for noise reduction
+            let noise_floor = audio::audio_processing::average_noise_spectrum(&normalized_samples);
+            let denoised_samples = match audio::audio_processing::spectral_subtraction(&normalized_samples, noise_floor) {
+                Ok(denoised) => denoised,
+                Err(e) => {
+                    log_error!("Failed to apply spectral subtraction: {}", e);
+                    normalized_samples // Fallback to normalized samples if denoising fails
+                }
+            };
+            log_debug!("Applied spectral subtraction with noise floor: {}", noise_floor);
+
             // Resample the mixed audio to 16kHz
             let resampled_samples = if mic_rate != WHISPER_SAMPLE_RATE {
-                match audio::audio_processing::resample(&mixed_samples, mic_rate, WHISPER_SAMPLE_RATE) {
+                match audio::audio_processing::resample(&denoised_samples, mic_rate, WHISPER_SAMPLE_RATE) {
                     Ok(resampled) => resampled,
                     Err(e) => {
                         log_error!("Failed to resample mixed audio: {}", e);
@@ -429,7 +444,7 @@ async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
                     }
                 }
             } else {
-                mixed_samples
+                denoised_samples
             };
 
             // Add samples to current chunk

@@ -58,7 +58,10 @@ pub fn spectral_subtraction(audio: &[f32], d: f32) -> Result<Vec<f32>> {
 
     let mut padded_audio = audio.to_vec();
 
-    padded_audio.append(&mut vec![0.0f32; window_size - audio.len()]);
+    // Ensure we have enough samples for the window size
+    if padded_audio.len() < window_size {
+        padded_audio.append(&mut vec![0.0f32; window_size - padded_audio.len()]);
+    }
 
     let mut indata = padded_audio;
     r2c.process(&mut indata, &mut y)?;
@@ -66,26 +69,15 @@ pub fn spectral_subtraction(audio: &[f32], d: f32) -> Result<Vec<f32>> {
     let mut processed_audio = y
         .iter()
         .map(|&x| {
-            let magnitude_y = x.abs().powf(2.0);
-
-            let div = 1.0 - (d / magnitude_y);
-
-            let gain = {
-                if div > 0.0 {
-                    f32::sqrt(div)
-                } else {
-                    0.0f32
-                }
-            };
-
+            let magnitude_y = x.abs().powf(2.0).max(1e-10); // Prevent division by zero
+            let div = (magnitude_y - d).max(0.0) / magnitude_y; // Prevent negative values
+            let gain = f32::sqrt(div);
             x * gain
         })
         .collect::<Vec<Complex32>>();
 
     let c2r = real_planner.plan_fft_inverse(window_size);
-
     let mut outdata = c2r.make_output_vec();
-
     c2r.process(&mut processed_audio, &mut outdata)?;
 
     Ok(outdata)
