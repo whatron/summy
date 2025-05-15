@@ -8,6 +8,7 @@ A local-first, real-time audio transcription and summarization app built with Ta
 Summy is a local, privacy-respecting tool for real-time audio transcription and summarization. It captures audio from system and microphone inputs, transcribes it using a locally running Whisper model, and generates concise summaries using modern NLP models like BART or T5. Designed for lecture notes, meetings, and personal recordings, Summy operates fully offline to ensure user data privacy.
 
 ## Prerequisites
+Please ensure these are present
 
 - Node.js (v16 or higher)
 - Python (v3.8 or higher)
