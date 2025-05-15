@@ -13,6 +13,7 @@ Please ensure these are present
 - Node.js (v16 or higher)
 - Python (v3.8 or higher)
 - Rust (for Tauri)
+- Xcode (full version) (for Tauri)
 
 ## Backend Setup
 
